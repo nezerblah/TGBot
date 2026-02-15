@@ -1,0 +1,11 @@
+[[providers]]
+name = "python"
+
+[build]
+cmds = [
+  "pip install -r TGBot/requirements.txt"
+]
+
+[start]
+cmd = "python TGBot/main_webhook.py"
+
