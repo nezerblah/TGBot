@@ -21,24 +21,26 @@ SIGN_TITLES = {
 }
 
 def signs_keyboard():
-    kb = InlineKeyboardMarkup(row_width=3)
-    for s in ZODIAC_SIGNS:
-        kb.add(InlineKeyboardButton(text=SIGN_TITLES.get(s, s.title()), callback_data=f"sign:{s}"))
+    buttons = [
+        InlineKeyboardButton(text=SIGN_TITLES.get(s, s.title()), callback_data=f"sign:{s}")
+        for s in ZODIAC_SIGNS
+    ]
+    kb = InlineKeyboardMarkup(inline_keyboard=[buttons[i:i+3] for i in range(0, len(buttons), 3)])
     return kb
 
 
 def sign_detail_keyboard(sign: str, subscribed: bool = False):
-    kb = InlineKeyboardMarkup()
+    buttons = []
     if subscribed:
-        kb.add(InlineKeyboardButton(text="Отписаться", callback_data=f"unsub:{sign}"))
+        buttons.append([InlineKeyboardButton(text="Отписаться", callback_data=f"unsub:{sign}")])
     else:
-        kb.add(InlineKeyboardButton(text="Подписаться", callback_data=f"sub:{sign}"))
-    kb.add(InlineKeyboardButton(text="Вернуться", callback_data="back:list"))
+        buttons.append([InlineKeyboardButton(text="Подписаться", callback_data=f"sub:{sign}")])
+    buttons.append([InlineKeyboardButton(text="Вернуться", callback_data="back:list")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     return kb
 
 
 def back_keyboard():
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(text="Назад", callback_data="back:list"))
+    buttons = [[InlineKeyboardButton(text="Назад", callback_data="back:list")]]
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     return kb
-
