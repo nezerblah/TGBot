@@ -3,8 +3,8 @@ import requests
 import json
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-WEBHOOK_URL = os.getenv('WEBHOOK_URL')
-WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')
+WEBHOOK_URL = "https://your-railway-app.up.railway.app/webhook"
+WEBHOOK_SECRET = "securepassword2026"
 
 if not BOT_TOKEN or not WEBHOOK_URL:
     print('Missing BOT_TOKEN or WEBHOOK_URL')
