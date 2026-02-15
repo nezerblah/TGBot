@@ -1,0 +1,11 @@
+[providers]
+python = "3.11"
+
+[build]
+cmds = [
+  "pip install -r TGBot/requirements.txt"
+]
+
+[start]
+cmd = "cd TGBot && python main_webhook.py"
+
