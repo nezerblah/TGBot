@@ -1,7 +1,5 @@
 import os
 from aiogram import Bot, types
-from aiogram.dispatcher.filters import Command
-from aiogram.types import Update
 from .handlers import setup_handlers
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
