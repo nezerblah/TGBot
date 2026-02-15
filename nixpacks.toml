@@ -1,5 +1,5 @@
-[[providers]]
-name = "python"
+[providers]
+python = "3.11"
 
 [build]
 cmds = [
@@ -8,4 +8,3 @@ cmds = [
 
 [start]
 cmd = "python TGBot/main_webhook.py"
-
