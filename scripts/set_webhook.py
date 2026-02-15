@@ -1,13 +1,12 @@
 import os
 import requests
-import json
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-WEBHOOK_URL = "https://tgbot-production-d65b.up.railway.app/webhook"
-WEBHOOK_SECRET = "securepassword2026"
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')
 
 if not BOT_TOKEN or not WEBHOOK_URL:
-    print('Missing BOT_TOKEN or WEBHOOK_URL')
+    print('Missing BOT_TOKEN or WEBHOOK_URL. Set them as environment variables.')
     exit(1)
 
 url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook"

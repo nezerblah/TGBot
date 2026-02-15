@@ -37,6 +37,10 @@ wheels/
 *.db
 *.sqlite
 *.sqlite3
+tg_bot.db
+
+# Архивы
+docs_archive.zip
 
 # Логи
 *.log
@@ -50,4 +54,3 @@ Thumbs.db
 .git/
 .gitignore
 Procfile
-

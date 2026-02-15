@@ -25,7 +25,7 @@ def signs_keyboard():
         InlineKeyboardButton(text=SIGN_TITLES.get(s, s.title()), callback_data=f"sign:{s}")
         for s in ZODIAC_SIGNS
     ]
-    kb = InlineKeyboardMarkup(inline_keyboard=[buttons[i:i+3] for i in range(0, len(buttons), 3)])
+    kb = InlineKeyboardMarkup(row_width=3, inline_keyboard=[buttons])
     return kb
 
 
