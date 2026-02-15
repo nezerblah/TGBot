@@ -1,1 +1,1 @@
-web: python TGBot/main_webhook.py
+web: python -u TGBot/main_webhook.py

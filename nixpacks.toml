@@ -1,10 +1,14 @@
-[providers]
-python = "3.11"
+[phases.setup]
+packages = [ "python" ]
 
-[build]
+[phases.install]
 cmds = [
+  "python -m pip install --upgrade pip",
   "pip install -r TGBot/requirements.txt"
 ]
 
-[start]
+[phases.build]
+# ничего не нужно собирать для Python-приложения
+
+[phases.start]
 cmd = "python TGBot/main_webhook.py"
