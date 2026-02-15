@@ -9,7 +9,11 @@ app = FastAPI()
 app.include_router(webhook_router)
 
 # create tables if not exist (simple approach)
-Base.metadata.create_all(bind=engine)
+# try to create tables, but don't fail if DB is not available
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"Warning: Could not create tables on startup: {e}")
 
 # start scheduler once on startup
 @app.on_event("startup")
