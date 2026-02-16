@@ -217,11 +217,20 @@ async def handle_unsubscribe(bot, chat_id: int, user_id: int, sign: str, message
 async def handle_subscribers(bot, msg: types.Message):
     db = SessionLocal()
     try:
-        total = db.query(User).count()
-        stats = db.query(Subscription.sign, func.count(Subscription.id)).filter(Subscription.active==True).group_by(Subscription.sign).all()
-        lines = [f"Всего пользователей: {total}"]
-        for sign, cnt in stats:
-            lines.append(f"{sign}: {cnt}")
+        # Count unique users with active subscriptions
+        active_users = db.query(func.count(func.distinct(Subscription.user_id))).filter(Subscription.active==True).scalar() or 0
+
+        # Count active subscriptions per sign
+        stats = db.query(Subscription.sign, func.count(Subscription.id)).filter(
+            Subscription.active==True
+        ).group_by(Subscription.sign).all()
+
+        lines = [f"Активных пользователей: {active_users}"]
+        lines.append(f"Всего активных подписок: {sum(cnt for _, cnt in stats)}")
+        lines.append("")
+        for sign, cnt in sorted(stats, key=lambda x: x[1], reverse=True):
+            lines.append(f"{sign.title()}: {cnt}")
+
         await bot.send_message(msg.chat.id, "\n".join(lines))
     finally:
         db.close()
