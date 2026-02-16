@@ -27,33 +27,75 @@ def extract_ratings(soup) -> dict:
         # Find all text that contains our category names
         all_elements = soup.find_all(['div', 'span', 'p', 'li', 'dd', 'dt'])
 
+        found_elements = []
+
         for elem in all_elements:
             elem_text = elem.get_text(strip=True).lower()
 
             # Check if this element contains one of our categories
             if 'финанс' in elem_text or 'здоров' in elem_text or 'любов' in elem_text:
-                if len(elem_text) < 100:  # Should be short - just category name + stars
-                    logger.info(f"Found element: {elem_text}")
+                if len(elem_text) < 200:  # Should be short - just category name + stars
+                    found_elements.append({
+                        'text': elem_text,
+                        'html': str(elem)[:500],
+                        'tag': elem.name,
+                        'classes': elem.get('class', [])
+                    })
 
-                    # Count star IMAGES in this element and nearby
-                    parent = elem.find_parent(['div', 'li', 'dd', 'section'])
-                    if parent is None:
-                        parent = elem
+        logger.info(f"Found {len(found_elements)} elements with category names")
+        for i, el in enumerate(found_elements):
+            logger.info(f"Element {i}: text='{el['text'][:80]}' | tag={el['tag']} | classes={el['classes']}")
+            logger.info(f"  HTML: {el['html']}")
 
-                    # Count all IMG and SVG elements with 'star' in them
-                    star_count = _count_star_icons(parent)
-                    logger.info(f"Star count: {star_count}")
+        # Now try to extract ratings from found elements
+        for elem_data in found_elements:
+            # Find the actual element again from soup
+            for elem in soup.find_all(['div', 'span', 'p', 'li', 'dd', 'dt']):
+                if elem.get_text(strip=True).lower() == elem_data['text']:
+                    logger.info(f"Processing: {elem_data['text'][:50]}")
+
+                    # Try multiple strategies to find stars
+
+                    # Strategy 1: Look in the element itself
+                    star_count = _count_star_icons(elem)
+                    logger.info(f"  Strategy 1 (element itself): {star_count} stars")
+
+                    # Strategy 2: Look in next sibling
+                    if star_count == 0 and elem.next_sibling:
+                        next_elem = elem.next_sibling
+                        if hasattr(next_elem, 'find_all'):
+                            star_count = _count_star_icons(next_elem)
+                            logger.info(f"  Strategy 2 (next sibling): {star_count} stars")
+
+                    # Strategy 3: Look in parent's children
+                    if star_count == 0:
+                        parent = elem.find_parent(['div', 'li', 'section', 'dd'])
+                        if parent:
+                            star_count = _count_star_icons(parent)
+                            logger.info(f"  Strategy 3 (parent element): {star_count} stars")
+
+                    # Strategy 4: Count direct <img> tags anywhere in parent
+                    if star_count == 0:
+                        parent = elem.find_parent(['div', 'li', 'section', 'dd'])
+                        if parent:
+                            imgs = parent.find_all('img')
+                            star_count = len(imgs)
+                            logger.info(f"  Strategy 4 (all img tags): {star_count} images")
+                            for img in imgs:
+                                logger.info(f"    - img src: {img.get('src', 'no src')}")
 
                     if star_count > 0:
-                        if 'финанс' in elem_text:
+                        if 'финанс' in elem_data['text']:
                             ratings["Финансы"] = "⭐" * star_count
                             logger.info(f"✓ Set Finance: {star_count} stars")
-                        elif 'здоров' in elem_text:
+                        elif 'здоров' in elem_data['text']:
                             ratings["Здоровье"] = "⭐" * star_count
                             logger.info(f"✓ Set Health: {star_count} stars")
-                        elif 'любов' in elem_text:
+                        elif 'любов' in elem_data['text']:
                             ratings["Любовь"] = "⭐" * star_count
                             logger.info(f"✓ Set Love: {star_count} stars")
+
+                    break
 
         logger.info(f"=== FINAL RATINGS: {ratings} ===")
 
@@ -70,31 +112,31 @@ def _count_star_icons(elem) -> int:
     try:
         star_count = 0
 
-        # Method 1: Count img elements with 'star' in src attribute
-        for img in elem.find_all('img'):
+        # Method 1: Count img elements
+        imgs = elem.find_all('img', recursive=True)
+        logger.debug(f"Found {len(imgs)} img elements")
+        for img in imgs:
             src = img.get('src', '').lower()
             alt = img.get('alt', '').lower()
+            logger.debug(f"  IMG: src='{src}' alt='{alt}'")
 
-            # Check if this looks like a star image
-            if 'star' in src or '★' in alt or 'звез' in alt:
-                star_count += 1
-                logger.debug(f"Found star img: src={src}, alt={alt}")
-
-        # Method 2: Count svg elements with 'star' in class or id
-        for svg in elem.find_all('svg'):
-            classes = ' '.join(svg.get('class', [])).lower()
-            svg_id = svg.get('id', '').lower()
-
-            if 'star' in classes or 'star' in svg_id:
-                star_count += 1
-                logger.debug(f"Found star svg: class={classes}, id={svg_id}")
-
-        # Method 3: Count span/div elements that look like stars (sometimes they use pseudo-elements or backgrounds)
-        for elem_child in elem.find_all(['span', 'i'], class_=lambda x: x and 'star' in x.lower()):
+            # Count any img as potential star if parent mentions star/rating
             star_count += 1
-            logger.debug(f"Found star element: {elem_child.get('class', [])}")
 
-        logger.info(f"Total stars counted: {star_count}")
+        # Method 2: Count svg elements
+        svgs = elem.find_all('svg', recursive=True)
+        logger.debug(f"Found {len(svgs)} svg elements")
+        for svg in svgs:
+            classes = ' '.join(svg.get('class', [])).lower()
+            logger.debug(f"  SVG: class='{classes}'")
+            star_count += 1
+
+        # Method 3: Count span/i elements with star classes
+        stars_by_class = elem.find_all(['span', 'i'], class_=lambda x: x and ('star' in x.lower() or 'icon' in x.lower()))
+        logger.debug(f"Found {len(stars_by_class)} elements with star/icon class")
+        star_count += len(stars_by_class)
+
+        logger.info(f"Total icons counted: {star_count}")
         return star_count
 
     except Exception as e:
