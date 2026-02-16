@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 import logging
 from .webhook import router as webhook_router
-from .bot import bot
+from .bot import bot, setup_bot_commands
 from .scheduler import setup_scheduler
 from .db import Base, engine
+import os
 
 # Setup logging
 logging.basicConfig(
@@ -28,6 +29,22 @@ except Exception as e:
 async def startup_event():
     logger.info("Starting scheduler...")
     setup_scheduler(bot)
+    try:
+        await setup_bot_commands()
+    except Exception as e:
+        logger.warning(f"Could not set bot commands: {e}")
+
+    webhook_url = os.getenv("WEBHOOK_URL")
+    webhook_secret = os.getenv("WEBHOOK_SECRET")
+    if webhook_url:
+        try:
+            await bot.set_webhook(
+                url=webhook_url,
+                secret_token=webhook_secret,
+                drop_pending_updates=True,
+            )
+        except Exception as e:
+            logger.warning(f"Could not reset webhook: {e}")
     logger.info("Scheduler started")
 
 @app.get("/")
@@ -37,4 +54,3 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
-

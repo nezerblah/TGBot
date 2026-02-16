@@ -6,10 +6,25 @@ from .models import User, Subscription
 from .horo.parser import fetch_horoscope
 from sqlalchemy import func
 import os
+import time
 
 logger = logging.getLogger(__name__)
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+
+_CALLBACK_DEBOUNCE_SECONDS = 1.0
+_last_callback = {}
+
+
+def _is_duplicate_callback(user_id: int, data: str) -> bool:
+    key = (user_id, data)
+    now = time.monotonic()
+    last = _last_callback.get(key)
+    if last and now - last < _CALLBACK_DEBOUNCE_SECONDS:
+        return True
+    _last_callback[key] = now
+    return False
+
 
 async def setup_handlers(bot, update: types.Update):
     """Main dispatcher for handling messages and callbacks"""
@@ -24,6 +39,8 @@ async def setup_handlers(bot, update: types.Update):
                     await handle_list(bot, msg)
                 elif msg.text.startswith('/me'):
                     await handle_me(bot, msg)
+                elif msg.text.startswith('/help'):
+                    await handle_help(bot, msg)
                 elif msg.text.startswith('/subscribers') and msg.from_user.id == ADMIN_ID:
                     await handle_subscribers(bot, msg)
                 elif msg.text.startswith('/send_now') and msg.from_user.id == ADMIN_ID:
@@ -33,6 +50,12 @@ async def setup_handlers(bot, update: types.Update):
         elif update.callback_query:
             cb = update.callback_query
             logger.info(f"Callback from {cb.from_user.id}: {cb.data}")
+            if _is_duplicate_callback(cb.from_user.id, cb.data):
+                try:
+                    await bot.answer_callback_query(cb.id)
+                except Exception:
+                    pass
+                return
             data = cb.data
             if data.startswith('sign:'):
                 sign = data.split(':',1)[1]
@@ -63,9 +86,23 @@ async def handle_start(bot, msg: types.Message):
             user = User(telegram_id=msg.from_user.id, username=msg.from_user.username, first_name=msg.from_user.first_name, last_name=msg.from_user.last_name)
             db.add(user)
             db.commit()
-        await bot.send_message(msg.chat.id, "Привет! Выберите знак зодиака:", reply_markup=signs_keyboard())
+        text = (
+            "Привет! Я бот с гороскопами.\n"
+            "Выберите знак зодиака или используйте команды из меню."
+        )
+        await bot.send_message(msg.chat.id, text, reply_markup=signs_keyboard())
     finally:
         db.close()
+
+async def handle_help(bot, msg: types.Message):
+    text = (
+        "Доступные команды:\n"
+        "/start — начать работу\n"
+        "/list — список знаков\n"
+        "/me — мои подписки\n"
+        "/help — помощь"
+    )
+    await bot.send_message(msg.chat.id, text)
 
 async def handle_list(bot, msg: types.Message):
     await bot.send_message(msg.chat.id, "Выберите знак:", reply_markup=signs_keyboard())
