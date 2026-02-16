@@ -45,9 +45,9 @@ def setup_scheduler(bot):
     try:
         sched = AsyncIOScheduler(timezone=MSE_ZONE)
         # register coroutine job directly; pass bot as arg
-        sched.add_job(send_daily, CronTrigger(hour=11, minute=0, timezone=MSE_ZONE), args=[bot], id='send_daily')
+        sched.add_job(send_daily, CronTrigger(hour=13, minute=13, timezone=MSE_ZONE), args=[bot], id='send_daily')
         sched.start()
-        logger.info("Scheduler started. Daily horoscope will be sent at 11:00 MSK")
+        logger.info("Scheduler started. Daily horoscope will be sent at 13:13 MSK")
         return sched
     except Exception as e:
         logger.error(f"Failed to setup scheduler: {e}", exc_info=True)
