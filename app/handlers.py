@@ -112,7 +112,11 @@ async def handle_subscribe(bot, chat_id: int, user_id: int, sign: str, message_i
             db.add(user)
             db.commit()
             db.refresh(user)
+
+        # Check if already subscribed
         sub = db.query(Subscription).filter_by(user_id=user.id, sign=sign).first()
+        was_subscribed = sub and sub.active if sub else False
+
         if not sub:
             sub = Subscription(user_id=user.id, sign=sign, active=True)
             db.add(sub)
@@ -126,7 +130,12 @@ async def handle_subscribe(bot, chat_id: int, user_id: int, sign: str, message_i
         except Exception as e:
             logger.warning(f"Could not answer callback query: {e}")
 
-        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=sign_detail_keyboard(sign, subscribed=True))
+        # Only update keyboard if subscription status actually changed
+        if not was_subscribed:
+            try:
+                await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=sign_detail_keyboard(sign, subscribed=True))
+            except Exception as e:
+                logger.warning(f"Could not edit message reply markup: {e}")
     finally:
         db.close()
 
@@ -149,14 +158,17 @@ async def handle_unsubscribe(bot, chat_id: int, user_id: int, sign: str, message
                 logger.warning(f"Could not answer callback query: {e}")
             return
         sub = db.query(Subscription).filter_by(user_id=user.id, sign=sign).first()
-        if sub:
+        if sub and sub.active:
             sub.active = False
             db.commit()
             try:
                 await bot.answer_callback_query(callback_id, text=f"Отписались от {sign}")
             except Exception as e:
                 logger.warning(f"Could not answer callback query: {e}")
-            await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=sign_detail_keyboard(sign, subscribed=False))
+            try:
+                await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=sign_detail_keyboard(sign, subscribed=False))
+            except Exception as e:
+                logger.warning(f"Could not edit message reply markup: {e}")
         else:
             try:
                 await bot.answer_callback_query(callback_id, text="Вы не были подписаны")
