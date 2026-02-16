@@ -83,7 +83,74 @@ def extract_ratings(soup) -> dict:
     return ratings
 
 
-async def fetch_horoscope(sign: str) -> str:
+def extract_horoscope_text(soup) -> str:
+    """Extract full horoscope text from the page"""
+
+    logger.info("=== EXTRACTING HOROSCOPE TEXT ===")
+
+    # Try multiple selectors to find the main horoscope content
+    possible_containers = [
+        soup.select_one('.article__text'),           # Common Mail.ru class
+        soup.select_one('[data-qa="article-text"]'),  # Data attribute
+        soup.select_one('.article__item'),
+        soup.select_one('.prediction__text'),
+        soup.select_one('article'),
+        soup.select_one('main'),
+    ]
+
+    # Find the container with actual content
+    container = None
+    for possible in possible_containers:
+        if possible:
+            text = possible.get_text(strip=True)
+            if len(text) > 100:  # Must have substantial content
+                container = possible
+                logger.info(f"Found container with {len(text)} characters")
+                break
+
+    if not container:
+        logger.warning("No container found, trying alternative approach")
+        # Last resort: find all paragraphs and combine them
+        paragraphs = soup.find_all('p')
+        if paragraphs:
+            # Filter paragraphs that look like horoscope content (not too short, not too long)
+            horoscope_paragraphs = []
+            for p in paragraphs:
+                text = p.get_text(strip=True)
+                if 50 < len(text) < 2000:  # Reasonable paragraph size
+                    horoscope_paragraphs.append(text)
+
+            if horoscope_paragraphs:
+                text = '\n\n'.join(horoscope_paragraphs)
+                logger.info(f"Extracted {len(horoscope_paragraphs)} paragraphs")
+                return text
+
+        return "Не удалось получить текст гороскопа"
+
+    # Extract all text from container, preserving paragraph structure
+    text_parts = []
+
+    # Get all direct text and paragraph elements
+    for child in container.children:
+        if isinstance(child, str):
+            text = child.strip()
+            if text:
+                text_parts.append(text)
+        elif child.name in ['p', 'div', 'span']:
+            text = child.get_text(strip=True)
+            if text and len(text) > 20:  # Ignore very short fragments
+                text_parts.append(text)
+
+    # If we got parts, join them
+    if text_parts:
+        full_text = '\n\n'.join(text_parts)
+        logger.info(f"Extracted {len(full_text)} characters from container")
+        return full_text
+
+    # Fallback: just get all text from container
+    text = container.get_text(separator='\n', strip=True)
+    logger.info(f"Fallback: extracted {len(text)} characters")
+    return text if text else "Не удалось получить текст гороскопа"
     """Fetch horoscope for a given zodiac sign with ratings"""
     # check cache
     db = SessionLocal()
@@ -114,13 +181,8 @@ async def fetch_horoscope(sign: str) -> str:
                 html = resp.text
                 soup = BeautifulSoup(html, "html.parser")
 
-                # Extract main horoscope text
-                container = soup.select_one('.article__text') or soup.select_one('.article__item') or soup.select_one('.article__summary')
-                if not container:
-                    p = soup.find('p')
-                    text = p.get_text(strip=True) if p else "Не удалось получить текст гороскопа"
-                else:
-                    text = container.get_text(separator="\n", strip=True)
+                # Extract full horoscope text
+                text = extract_horoscope_text(soup)
 
                 # Extract ratings
                 ratings = extract_ratings(soup)
