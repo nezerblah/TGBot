@@ -13,7 +13,7 @@ BASE_URL = "https://horo.mail.ru"
 SIGN_PATH = "/prediction/{sign}/today/"
 
 def extract_ratings(soup) -> dict:
-    """Extract ratings (stars) for Finance, Health, Love from the page"""
+    """Extract star ratings (1-5) for Finance, Health, Love from the bottom of horoscope"""
     ratings = {
         "Финансы": "❓",
         "Здоровье": "❓",
@@ -21,113 +21,132 @@ def extract_ratings(soup) -> dict:
     }
 
     try:
-        # Look for all rating/score elements
-        # Mail.ru uses different structures, try multiple approaches
+        # Mail.ru horoscopes have ratings usually in a specific section
+        # Look for rating elements - they're typically in containers at the bottom
 
-        # Approach 1: Find divs/sections with rating information
-        all_text_elements = soup.find_all(['div', 'span', 'p', 'li'])
+        # Strategy 1: Look for elements with SVG/IMG stars (most reliable)
+        # Strategy 2: Look for numerical ratings (1-5)
+        # Strategy 3: Look for specific rating classes/structures
 
-        for elem in all_text_elements:
-            text = elem.get_text(strip=True)
+        # Find all potential rating containers
+        # Usually they have "rating", "mark", "score" in class or contain star images
 
-            # Check if this element contains finance rating
-            if any(keyword in text.lower() for keyword in ['финансы', 'деньги', 'money']):
-                # Look for numbers in nearby elements
-                rating = _extract_number_from_context(elem)
-                if rating:
-                    ratings["Финансы"] = "⭐" * rating
+        all_elements = soup.find_all(['div', 'section', 'article'])
 
-            # Check for health rating
-            if any(keyword in text.lower() for keyword in ['здоровье', 'здоровья', 'health']):
-                rating = _extract_number_from_context(elem)
-                if rating:
-                    ratings["Здоровье"] = "⭐" * rating
+        for elem in all_elements:
+            elem_text = elem.get_text(strip=True).lower()
+            elem_html = elem.get('class', [])
+            elem_classes = ' '.join(elem_html) if isinstance(elem_html, list) else str(elem_html)
 
-            # Check for love rating
-            if any(keyword in text.lower() for keyword in ['любовь', 'любви', 'romance', 'love']):
-                rating = _extract_number_from_context(elem)
-                if rating:
-                    ratings["Любовь"] = "⭐" * rating
+            # Skip if this looks like main article content (too long)
+            if len(elem_text) > 500:
+                continue
 
-        # Approach 2: Look specifically in structured data or common classes
-        rating_containers = soup.find_all(['div', 'span'], class_=lambda x: x and any(cls in (x.lower() if x else '') for cls in ['rating', 'score', 'stars', 'mark']))
+            # Check if this might be a rating section
+            is_rating_section = any(word in elem_classes.lower() for word in ['rating', 'mark', 'score', 'rate'])
 
-        for container in rating_containers:
-            parent_text = container.find_parent(['div', 'li', 'section'])
-            if parent_text:
-                parent_text_str = parent_text.get_text(strip=True).lower()
-                rating = _extract_number_from_context(container)
+            if is_rating_section or ('финансы' in elem_text and 'здоровье' in elem_text and 'любовь' in elem_text):
+                # This looks like a rating container!
+                # Extract individual ratings
 
-                if rating and rating > 0:
-                    if 'финанс' in parent_text_str:
-                        ratings["Финансы"] = "⭐" * rating
-                    elif 'здоров' in parent_text_str:
-                        ratings["Здоровье"] = "⭐" * rating
-                    elif 'любов' in parent_text_str:
-                        ratings["Любовь"] = "⭐" * rating
+                # Look for child elements
+                rating_items = elem.find_all(['div', 'span', 'li', 'dd'])
+
+                for item in rating_items:
+                    item_text = item.get_text(strip=True)
+
+                    # Count star elements (img, svg, or other star indicators)
+                    stars = _count_stars_in_element(item)
+
+                    if stars == 0:
+                        # Try to find numbers
+                        stars = _extract_rating_number(item_text)
+
+                    if stars > 0:
+                        # Determine which category this is
+                        if 'финанс' in item_text.lower():
+                            ratings["Финансы"] = "⭐" * stars
+                            logger.info(f"Found Finance rating: {stars}")
+                        elif 'здоров' in item_text.lower():
+                            ratings["Здоровье"] = "⭐" * stars
+                            logger.info(f"Found Health rating: {stars}")
+                        elif 'любов' in item_text.lower():
+                            ratings["Любовь"] = "⭐" * stars
+                            logger.info(f"Found Love rating: {stars}")
 
     except Exception as e:
-        logger.warning(f"Error extracting ratings: {e}")
+        logger.warning(f"Error extracting ratings: {e}", exc_info=True)
 
     return ratings
 
-def _extract_number_from_context(elem) -> int:
-    """Extract a number (1-5) from element and its siblings"""
+def _count_stars_in_element(elem) -> int:
+    """Count star images/elements in given element"""
     if not elem:
         return 0
 
     try:
-        # Check current element
-        text = elem.get_text(strip=True)
-        number = _parse_number_from_text(text)
-        if 1 <= number <= 5:
-            return number
+        star_count = 0
 
-        # Check next sibling
-        if elem.next_sibling:
-            if isinstance(elem.next_sibling, str):
-                number = _parse_number_from_text(elem.next_sibling)
-            else:
-                number = _parse_number_from_text(elem.next_sibling.get_text(strip=True))
-            if 1 <= number <= 5:
-                return number
+        # Look for img tags with 'star' in src
+        for img in elem.find_all('img'):
+            src = img.get('src', '').lower()
+            alt = img.get('alt', '').lower()
+            title = img.get('title', '').lower()
 
-        # Check parent's children
-        parent = elem.find_parent(['div', 'li', 'section'])
-        if parent:
-            # Look for rating badges or indicators near the label
-            for child in parent.find_all(['span', 'div', 'em', 'strong']):
-                text = child.get_text(strip=True)
-                number = _parse_number_from_text(text)
-                if 1 <= number <= 5:
-                    return number
+            if 'star' in src or 'звез' in alt or 'star' in title:
+                star_count += 1
 
-        # Check data attributes
-        for attr in ['data-rating', 'data-score', 'data-stars']:
-            value = elem.get(attr)
-            if value:
-                number = _parse_number_from_text(value)
-                if 1 <= number <= 5:
-                    return number
+        # Look for svg elements
+        for svg in elem.find_all('svg'):
+            classes = ' '.join(svg.get('class', []))
+            if 'star' in classes.lower():
+                star_count += 1
+
+        # Look for elements with star emoji or unicode
+        text = elem.get_text()
+        if '⭐' in text:
+            star_count = text.count('⭐')
+        elif '★' in text:
+            star_count = text.count('★')
+
+        return star_count
 
     except Exception as e:
-        logger.debug(f"Error extracting number from context: {e}")
+        logger.debug(f"Error counting stars: {e}")
+        return 0
 
-    return 0
-
-def _parse_number_from_text(text: str) -> int:
-    """Parse a single digit number from text"""
+def _extract_rating_number(text: str) -> int:
+    """Extract rating number (1-5) from text"""
     if not text:
         return 0
 
     try:
         import re
-        # Find first number in text
-        numbers = re.findall(r'\d', str(text))
-        if numbers:
-            return int(numbers[0])
-    except:
-        pass
+
+        # Look for patterns like "4/5", "4 из 5", "рейтинг: 4" и т.д.
+        patterns = [
+            r'(\d)/5',           # X/5
+            r'(\d)\s*из\s*5',    # X из 5
+            r'(\d)\s*\*',        # X*
+            r':\s*(\d)\s*(?:звез|star)',  # : X звезд/stars
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                num = int(match.group(1))
+                if 1 <= num <= 5:
+                    return num
+
+        # Simple fallback: just find any digit 1-5
+        digits = re.findall(r'\d', text)
+        for digit_str in digits:
+            num = int(digit_str)
+            if 1 <= num <= 5:
+                return num
+
+    except Exception as e:
+        logger.debug(f"Error extracting rating number: {e}")
 
     return 0
 
