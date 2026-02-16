@@ -111,21 +111,41 @@ def extract_ratings(soup) -> dict:
 
 
 def extract_horoscope_text(soup) -> str:
-    """Extract only the main horoscope text block from the page"""
+    """Extract only the main horoscope text blocks from the page"""
 
     logger.info("=== EXTRACTING HOROSCOPE TEXT ===")
 
-    # Priority: Try to find the main horoscope content block
-    # Mail.ru usually has the main horoscope in a specific container
+    # The main horoscope content is in divs with article-item-type="html"
+    # These contain the actual horoscope paragraphs
+    horoscope_blocks = soup.find_all('div', attrs={'article-item-type': 'html'})
+
+    logger.info(f"Found {len(horoscope_blocks)} horoscope blocks")
+
+    if horoscope_blocks:
+        paragraphs = []
+
+        for block in horoscope_blocks:
+            # Each block contains a <p> tag with the actual text
+            p_tag = block.find('p')
+            if p_tag:
+                text = p_tag.get_text(strip=True)
+                if text and len(text) > 30:  # Skip very short text
+                    paragraphs.append(text)
+                    logger.info(f"Extracted paragraph: {text[:80]}...")
+
+        if paragraphs:
+            full_text = '\n\n'.join(paragraphs)
+            logger.info(f"Extracted {len(paragraphs)} paragraphs, total {len(full_text)} chars")
+            return full_text
+
+    # Fallback: try to find article content using standard selectors
+    logger.warning("No article-item-type blocks found, trying fallback")
+
     possible_containers = [
-        # Most specific selectors first
-        soup.select_one('[data-qa="horoscope-text"]'),
         soup.select_one('.article__text'),
-        soup.select_one('.prediction'),
         soup.select_one('[data-qa="article-text"]'),
-        # Find article tag
+        soup.select_one('.prediction'),
         soup.find('article'),
-        # Find main tag
         soup.find('main'),
     ]
 
@@ -133,60 +153,25 @@ def extract_horoscope_text(soup) -> str:
     for possible in possible_containers:
         if possible:
             text = possible.get_text(strip=True)
-            if len(text) > 100:  # Must have substantial content
+            if len(text) > 100:
                 container = possible
-                logger.info(f"Found container with {len(text)} characters")
+                logger.info(f"Found fallback container with {len(text)} characters")
                 break
 
     if not container:
-        logger.warning("No container found with standard selectors")
+        logger.warning("No container found")
         return "Не удалось получить текст гороскопа"
 
-    # Now extract only paragraphs that are direct children of the container
-    # This avoids getting nav, footer, sidebar text
+    # Extract paragraphs from container
     paragraphs = []
-
     for elem in container.find_all('p', recursive=False):
         text = elem.get_text(strip=True)
-        if len(text) > 30:  # Skip very short paragraphs (likely not content)
+        if len(text) > 30:
             paragraphs.append(text)
-            logger.info(f"Found paragraph: {text[:80]}...")
 
-    # If we found direct p tags, use them
     if paragraphs:
         full_text = '\n\n'.join(paragraphs)
-        logger.info(f"Extracted {len(paragraphs)} paragraphs, total {len(full_text)} chars")
-        return full_text
-
-    # Fallback: look for div children with text
-    divs = []
-    for elem in container.find_all('div', recursive=False):
-        text = elem.get_text(strip=True)
-        if len(text) > 50:  # Reasonable size
-            divs.append(text)
-            logger.info(f"Found div: {text[:80]}...")
-
-    if divs:
-        full_text = '\n\n'.join(divs)
-        logger.info(f"Extracted {len(divs)} divs, total {len(full_text)} chars")
-        return full_text
-
-    # Last fallback: get all text from container but try to exclude common non-content elements
-    # Get all children and filter by text content
-    text_parts = []
-    for child in container.children:
-        if isinstance(child, str):
-            text = child.strip()
-            if text and len(text) > 50:
-                text_parts.append(text)
-        elif hasattr(child, 'name') and child.name in ['p', 'div', 'span']:
-            text = child.get_text(strip=True)
-            if text and len(text) > 50:
-                text_parts.append(text)
-
-    if text_parts:
-        full_text = '\n\n'.join(text_parts)
-        logger.info(f"Extracted {len(text_parts)} text parts, total {len(full_text)} chars")
+        logger.info(f"Extracted {len(paragraphs)} paragraphs from fallback")
         return full_text
 
     logger.warning("Could not extract any meaningful text")
