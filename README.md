@@ -2,7 +2,7 @@
 
 Telegram бот на FastAPI + aiogram, который парсит гороскопы с horo.mail.ru и отправляет их подписчикам в 11:00 по МСК.
 
-**Архитектура:** WebHook (не polling), асинхронная обработка, APScheduler для расписания
+**Архитектура:** WebHook (не polling), асинхронная обработка, APScheduler для расписания, SQLite база данных
 
 ## 🚀 Быстрый старт
 
@@ -21,34 +21,46 @@ cp .env.example .env
 # Заполните значения BOT_TOKEN, ADMIN_ID, WEBHOOK_SECRET
 ```
 
-3. **Инициализируйте БД:**
-```bash
-python -c "from app.db import Base, engine; from app import models; Base.metadata.create_all(bind=engine)"
-```
-
-4. **Запустите локально:**
+3. **Запустите приложение:**
 ```bash
 uvicorn app.main:app --reload
 ```
 
 Приложение будет доступно на `http://localhost:8000`
+БД автоматически создастся в `tg_bot.db`
 
 ### 🚂 Деплой на Railway.com
 
-**📚 Полные гайды в папке [`docs/`](./docs/README.md)**
-
-**Быстрый старт:**
+1. **Убедитесь, что все изменения сохранены:**
 ```bash
-# 1. Push на GitHub
+git status
+git add .
+git commit -m "Fix bot implementation with SQLite"
 git push origin main
+```
 
-# 2. На railway.app: Create Project → Deploy from GitHub → выберите репозиторий
+2. **На railway.app:**
+   - Создайте новый проект
+   - Выберите GitHub репозиторий
+   - Railway автоматически обнаружит `Procfile` и развернёт приложение
 
-# 3. Add Service → PostgreSQL
+3. **Установите переменные окружения:**
+   - BOT_TOKEN: Токен вашего бота
+   - WEBHOOK_SECRET: Секретный ключ (используйте что-то сложное)
+   - ADMIN_ID: Ваш Telegram ID (для админ команд)
 
-# 4. В Variables добавьте: BOT_TOKEN, ADMIN_ID, WEBHOOK_SECRET
-
-# 5. bash scripts/setup_webhook.sh
+4. **Настройте webhook:**
+   - Используйте скрипт `scripts/set_webhook.py`
+   - Или выполните HTTP запрос:
+   ```bash
+   curl -X POST \
+     https://api.telegram.org/bot{BOT_TOKEN}/setWebhook \
+     -H "Content-Type: application/json" \
+     -d '{
+       "url": "https://your-railway-app.up.railway.app/webhook",
+       "secret_token": "your-webhook-secret"
+     }'
+   ```# 5. bash scripts/setup_webhook.sh
 ```
 
 ## 📋 Структура проекта
