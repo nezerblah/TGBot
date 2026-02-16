@@ -13,6 +13,33 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://horo.mail.ru"
 SIGN_PATH = "/prediction/{sign}/today/"
 
+# Telegram message limit is 4096 characters
+TELEGRAM_MESSAGE_LIMIT = 4096
+# Reserve space for ratings section (approximately 200 chars)
+RATINGS_RESERVE = 200
+
+def truncate_text(text: str, max_length: int = TELEGRAM_MESSAGE_LIMIT - RATINGS_RESERVE) -> str:
+    """Truncate text to fit within Telegram limits"""
+    if len(text) <= max_length:
+        return text
+
+    # Truncate at word boundary
+    truncated = text[:max_length]
+
+    # Find last space to avoid cutting in the middle of a word
+    last_space = truncated.rfind('\n\n')
+    if last_space > max_length - 100:  # If there's a paragraph break close to the limit
+        truncated = truncated[:last_space]
+    else:
+        last_space = truncated.rfind(' ')
+        if last_space > 0:
+            truncated = truncated[:last_space]
+
+    truncated = truncated.rstrip() + '...'
+    logger.info(f"Truncated text from {len(text)} to {len(truncated)} chars")
+    return truncated
+
+
 def extract_ratings(soup) -> dict:
     """Extract star ratings from horo.mail.ru using aria-label attribute"""
     ratings = {
@@ -187,6 +214,9 @@ async def fetch_horoscope(sign: str) -> str:
                 # Extract full horoscope text
                 text = extract_horoscope_text(soup)
 
+                # Truncate text to fit Telegram limits
+                text = truncate_text(text)
+
                 # Extract ratings
                 ratings = extract_ratings(soup)
 
@@ -197,6 +227,19 @@ async def fetch_horoscope(sign: str) -> str:
                 output += f"💪 Здоровье: {ratings['Здоровье']}\n"
                 output += f"💗 Любовь: {ratings['Любовь']}\n"
                 output += "━━━━━━━━━━━━━━━━━━━━━━"
+
+                # Double check that message fits Telegram limits
+                if len(output) > TELEGRAM_MESSAGE_LIMIT:
+                    logger.warning(f"Message still too long ({len(output)} chars), truncating more aggressively")
+                    text = truncate_text(text, TELEGRAM_MESSAGE_LIMIT - RATINGS_RESERVE - 200)
+                    output = f"🌟 {text}\n\n"
+                    output += "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    output += f"💰 Финансы: {ratings['Финансы']}\n"
+                    output += f"💪 Здоровье: {ratings['Здоровье']}\n"
+                    output += f"💗 Любовь: {ratings['Любовь']}\n"
+                    output += "━━━━━━━━━━━━━━━━━━━━━━"
+
+                logger.info(f"Final message length: {len(output)} chars")
 
                 # save to cache
                 db = SessionLocal()
