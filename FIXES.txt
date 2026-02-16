@@ -1,0 +1,62 @@
+ИСПРАВЛЕНИЯ ПРОЕКТА TGBOT
+========================
+
+КРИТИЧНЫЕ ИСПРАВЛЕНИЯ:
+
+1. ПЕРЕХОД НА SQLITE
+   - app/db.py: Используем sqlite:///./tg_bot.db
+   - Убрана зависимость psycopg2
+   - БД создаётся автоматически
+
+2. ИСПРАВЛЕНЫ ОШИБКИ AIOGRAM V3
+   - app/keyboards.py: Правильный синтаксис InlineKeyboardMarkup с двумерным массивом
+   - app/handlers.py: Исправлены вызовы callback_query
+
+3. ДОБАВЛЕНО ЛОГИРОВАНИЕ
+   - app/main.py: Логирование инициализации
+   - app/bot.py: Логирование получения обновлений
+   - app/webhook.py: Логирование webhook обработки
+   - app/handlers.py: Логирование всех обработчиков
+   - app/scheduler.py: Логирование расписания
+   - app/horo/parser.py: Логирование парсинга
+
+4. ИСПРАВЛЕНЫ ОБРАБОТЧИКИ ОШИБОК
+   - webhook.py: Безопасная обработка ошибок
+   - scheduler.py: Graceful error handling
+   - parser.py: Восстановление после ошибок
+
+5. ОБНОВЛЕНЫ ФАЙЛЫ
+   - requirements.txt: Удалён psycopg2
+   - Procfile: Удалена команда alembic
+   - .gitignore: Добавлены правила для SQLite
+
+СТРУКТУРА ПРОЕКТА
+==================
+
+app/
+  main.py      - FastAPI приложение ✓
+  db.py        - SQLite конфиг ✓
+  bot.py       - Инициализация бота ✓
+  webhook.py   - Webhook обработчик ✓
+  handlers.py  - Обработчики сообщений ✓
+  keyboards.py - Клавиатуры ✓
+  models.py    - Модели БД
+  scheduler.py - Расписание отправок ✓
+  horo/
+    parser.py  - Парсер гороскопов ✓
+
+scripts/
+  set_webhook.py - Скрипт настройки webhook
+
+ГОТОВНО К ДЕПЛОЮ
+=================
+
+Проект полностью исправлен и готов к запуску на Railway.
+
+Переменные окружения для Railway:
+  BOT_TOKEN: токен бота
+  WEBHOOK_SECRET: секретный ключ
+  ADMIN_ID: ваш Telegram ID
+
+Webhook настраивается скриптом: scripts/set_webhook.py
+

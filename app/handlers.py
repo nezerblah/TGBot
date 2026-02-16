@@ -1,4 +1,5 @@
 from aiogram import types
+import logging
 from .keyboards import signs_keyboard, sign_detail_keyboard, SIGN_TITLES
 from .db import SessionLocal
 from .models import User, Subscription
@@ -6,41 +7,50 @@ from .horo.parser import fetch_horoscope
 from sqlalchemy import func
 import os
 
+logger = logging.getLogger(__name__)
+
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 async def setup_handlers(bot, update: types.Update):
-    # Very small dispatcher: handle messages and callbacks
-    if update.message:
-        msg = update.message
-        if msg.text:
-            if msg.text.startswith('/start'):
-                await handle_start(bot, msg)
-            elif msg.text.startswith('/list'):
-                await handle_list(bot, msg)
-            elif msg.text.startswith('/me'):
-                await handle_me(bot, msg)
-            elif msg.text.startswith('/subscribers') and msg.from_user.id == ADMIN_ID:
-                await handle_subscribers(bot, msg)
-            elif msg.text.startswith('/send_now') and msg.from_user.id == ADMIN_ID:
-                await handle_send_now(bot, msg)
-            else:
-                await bot.send_message(msg.chat.id, "Неизвестная команда. Используйте /list или /start")
-    elif update.callback_query:
-        cb = update.callback_query
-        data = cb.data
-        if data.startswith('sign:'):
-            sign = data.split(':',1)[1]
-            await handle_show_sign(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
-        elif data.startswith('sub:'):
-            sign = data.split(':',1)[1]
-            await handle_subscribe(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
-        elif data.startswith('unsub:'):
-            sign = data.split(':',1)[1]
-            await handle_unsubscribe(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
-        elif data.startswith('back:'):
-            ctx = data.split(':',1)[1]
-            if ctx == 'list':
-                await bot.edit_message_text('Выберите знак зодиака:', chat_id=cb.message.chat.id, message_id=cb.message.message_id, reply_markup=signs_keyboard())
+    """Main dispatcher for handling messages and callbacks"""
+    try:
+        if update.message:
+            msg = update.message
+            logger.info(f"Message from {msg.from_user.id}: {msg.text}")
+            if msg.text:
+                if msg.text.startswith('/start'):
+                    await handle_start(bot, msg)
+                elif msg.text.startswith('/list'):
+                    await handle_list(bot, msg)
+                elif msg.text.startswith('/me'):
+                    await handle_me(bot, msg)
+                elif msg.text.startswith('/subscribers') and msg.from_user.id == ADMIN_ID:
+                    await handle_subscribers(bot, msg)
+                elif msg.text.startswith('/send_now') and msg.from_user.id == ADMIN_ID:
+                    await handle_send_now(bot, msg)
+                else:
+                    await bot.send_message(msg.chat.id, "Неизвестная команда. Используйте /list или /start")
+        elif update.callback_query:
+            cb = update.callback_query
+            logger.info(f"Callback from {cb.from_user.id}: {cb.data}")
+            data = cb.data
+            if data.startswith('sign:'):
+                sign = data.split(':',1)[1]
+                await handle_show_sign(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
+            elif data.startswith('sub:'):
+                sign = data.split(':',1)[1]
+                await handle_subscribe(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
+            elif data.startswith('unsub:'):
+                sign = data.split(':',1)[1]
+                await handle_unsubscribe(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
+            elif data.startswith('back:'):
+                ctx = data.split(':',1)[1]
+                if ctx == 'list':
+                    await bot.edit_message_text('Выберите знак зодиака:', chat_id=cb.message.chat.id, message_id=cb.message.message_id, reply_markup=signs_keyboard())
+                    await bot.answer_callback_query(cb.id)
+    except Exception as e:
+        logger.error(f"Error in setup_handlers: {e}", exc_info=True)
+        raise
 
 async def handle_start(bot, msg: types.Message):
     db = SessionLocal()
@@ -67,11 +77,12 @@ async def handle_me(bot, msg: types.Message):
         subs = [s.sign for s in user.subscriptions if s.active]
         text = f"Вы подписаны на: {', '.join([SIGN_TITLES.get(s,s) for s in subs]) if subs else 'ничего'}"
         # build keyboard to unsubscribe
-        kb = types.InlineKeyboardMarkup()
+        buttons = []
         for s in subs:
-            kb.add(types.InlineKeyboardButton(text=f"Отписаться {SIGN_TITLES.get(s,s)}", callback_data=f"unsub:{s}"))
+            buttons.append([types.InlineKeyboardButton(text=f"Отписаться {SIGN_TITLES.get(s,s)}", callback_data=f"unsub:{s}")])
         if subs:
-            kb.add(types.InlineKeyboardButton(text="Отписаться от всех", callback_data="unsub:all"))
+            buttons.append([types.InlineKeyboardButton(text="Отписаться от всех", callback_data="unsub:all")])
+        kb = types.InlineKeyboardMarkup(inline_keyboard=buttons)
         await bot.send_message(msg.chat.id, text, reply_markup=kb)
     finally:
         db.close()
