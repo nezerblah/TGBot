@@ -21,94 +21,116 @@ def extract_ratings(soup) -> dict:
     }
 
     try:
-        # Try different selectors for rating elements
-        # Mail.ru might use different structures
-        rating_elements = soup.find_all('div', class_=lambda x: x and 'rating' in x.lower())
+        # Look for all rating/score elements
+        # Mail.ru uses different structures, try multiple approaches
 
-        if not rating_elements:
-            # Alternative: look for span with stars
-            rating_elements = soup.find_all('span', class_=lambda x: x and ('star' in x.lower() or 'rate' in x.lower()))
+        # Approach 1: Find divs/sections with rating information
+        all_text_elements = soup.find_all(['div', 'span', 'p', 'li'])
 
-        # Try to find rating containers with specific patterns
-        for elem in soup.find_all(['div', 'span']):
+        for elem in all_text_elements:
             text = elem.get_text(strip=True)
-            parent = elem.find_parent(['div', 'li', 'section'])
 
-            # Look for Finance, Health, Love labels with ratings nearby
-            if 'Финансы' in text or 'финансы' in text:
-                stars = _extract_stars_from_parent(parent)
-                if stars:
-                    ratings["Финансы"] = stars
-            elif 'Здоровье' in text or 'здоровье' in text:
-                stars = _extract_stars_from_parent(parent)
-                if stars:
-                    ratings["Здоровье"] = stars
-            elif 'Любовь' in text or 'любовь' in text:
-                stars = _extract_stars_from_parent(parent)
-                if stars:
-                    ratings["Любовь"] = stars
+            # Check if this element contains finance rating
+            if any(keyword in text.lower() for keyword in ['финансы', 'деньги', 'money']):
+                # Look for numbers in nearby elements
+                rating = _extract_number_from_context(elem)
+                if rating:
+                    ratings["Финансы"] = "⭐" * rating
+
+            # Check for health rating
+            if any(keyword in text.lower() for keyword in ['здоровье', 'здоровья', 'health']):
+                rating = _extract_number_from_context(elem)
+                if rating:
+                    ratings["Здоровье"] = "⭐" * rating
+
+            # Check for love rating
+            if any(keyword in text.lower() for keyword in ['любовь', 'любви', 'romance', 'love']):
+                rating = _extract_number_from_context(elem)
+                if rating:
+                    ratings["Любовь"] = "⭐" * rating
+
+        # Approach 2: Look specifically in structured data or common classes
+        rating_containers = soup.find_all(['div', 'span'], class_=lambda x: x and any(cls in (x.lower() if x else '') for cls in ['rating', 'score', 'stars', 'mark']))
+
+        for container in rating_containers:
+            parent_text = container.find_parent(['div', 'li', 'section'])
+            if parent_text:
+                parent_text_str = parent_text.get_text(strip=True).lower()
+                rating = _extract_number_from_context(container)
+
+                if rating and rating > 0:
+                    if 'финанс' in parent_text_str:
+                        ratings["Финансы"] = "⭐" * rating
+                    elif 'здоров' in parent_text_str:
+                        ratings["Здоровье"] = "⭐" * rating
+                    elif 'любов' in parent_text_str:
+                        ratings["Любовь"] = "⭐" * rating
 
     except Exception as e:
         logger.warning(f"Error extracting ratings: {e}")
 
     return ratings
 
-def _extract_stars_from_parent(parent) -> str:
-    """Extract star rating from parent element"""
-    if not parent:
-        return None
+def _extract_number_from_context(elem) -> int:
+    """Extract a number (1-5) from element and its siblings"""
+    if not elem:
+        return 0
 
     try:
-        # Look for star elements (img, svg, or unicode stars)
-        star_count = 0
+        # Check current element
+        text = elem.get_text(strip=True)
+        number = _parse_number_from_text(text)
+        if 1 <= number <= 5:
+            return number
 
-        # Method 1: Count img/svg elements with 'star' in src/class
-        for img in parent.find_all(['img', 'svg']):
-            src = img.get('src', '').lower()
-            cls = img.get('class', [])
-            if isinstance(cls, list):
-                cls = ' '.join(cls).lower()
-            if 'star' in src or 'star' in cls:
-                star_count += 1
+        # Check next sibling
+        if elem.next_sibling:
+            if isinstance(elem.next_sibling, str):
+                number = _parse_number_from_text(elem.next_sibling)
+            else:
+                number = _parse_number_from_text(elem.next_sibling.get_text(strip=True))
+            if 1 <= number <= 5:
+                return number
 
-        if star_count > 0:
-            return "⭐" * star_count
+        # Check parent's children
+        parent = elem.find_parent(['div', 'li', 'section'])
+        if parent:
+            # Look for rating badges or indicators near the label
+            for child in parent.find_all(['span', 'div', 'em', 'strong']):
+                text = child.get_text(strip=True)
+                number = _parse_number_from_text(text)
+                if 1 <= number <= 5:
+                    return number
 
-        # Method 2: Look for data attributes with rating
-        for elem in parent.find_all(['div', 'span']):
-            data_rating = elem.get('data-rating')
-            if data_rating:
-                try:
-                    rating = int(float(data_rating))
-                    return "⭐" * rating
-                except:
-                    pass
-
-            # Check for title or aria-label with rating number
-            title = elem.get('title', '').strip()
-            if title and any(c.isdigit() for c in title):
-                for char in title:
-                    if char.isdigit():
-                        try:
-                            rating = int(char)
-                            if 1 <= rating <= 5:
-                                return "⭐" * rating
-                        except:
-                            pass
-
-        # Method 3: Parse text for numbers
-        text = parent.get_text()
-        import re
-        numbers = re.findall(r'\d', text)
-        if numbers:
-            rating = int(numbers[0])
-            if 1 <= rating <= 5:
-                return "⭐" * rating
+        # Check data attributes
+        for attr in ['data-rating', 'data-score', 'data-stars']:
+            value = elem.get(attr)
+            if value:
+                number = _parse_number_from_text(value)
+                if 1 <= number <= 5:
+                    return number
 
     except Exception as e:
-        logger.warning(f"Error extracting stars: {e}")
+        logger.debug(f"Error extracting number from context: {e}")
 
-    return None
+    return 0
+
+def _parse_number_from_text(text: str) -> int:
+    """Parse a single digit number from text"""
+    if not text:
+        return 0
+
+    try:
+        import re
+        # Find first number in text
+        numbers = re.findall(r'\d', str(text))
+        if numbers:
+            return int(numbers[0])
+    except:
+        pass
+
+    return 0
+
 
 async def fetch_horoscope(sign: str) -> str:
     """Fetch horoscope for a given zodiac sign with ratings, with caching"""
@@ -149,13 +171,15 @@ async def fetch_horoscope(sign: str) -> str:
 
                 # Extract ratings
                 ratings = extract_ratings(soup)
+                logger.info(f"Extracted ratings for {sign}: {ratings}")
 
                 # Format output with ratings
                 output = f"🌟 {text}\n\n"
-                output += "━━━━━━━━━━━━━━━━━\n"
+                output += "━━━━━━━━━━━━━━━━━━━━━━\n"
                 output += f"💰 Финансы: {ratings['Финансы']}\n"
                 output += f"💪 Здоровье: {ratings['Здоровье']}\n"
-                output += f"💗 Любовь: {ratings['Любовь']}"
+                output += f"💗 Любовь: {ratings['Любовь']}\n"
+                output += "━━━━━━━━━━━━━━━━━━━━━━"
 
                 # save to cache
                 db = SessionLocal()
