@@ -14,7 +14,7 @@ BASE_URL = "https://horo.mail.ru"
 SIGN_PATH = "/prediction/{sign}/today/"
 
 def extract_ratings(soup) -> dict:
-    """Extract star ratings from star icons at the bottom of horoscope page"""
+    """Extract star ratings from horo.mail.ru using aria-label attribute"""
     ratings = {
         "Финансы": "❓",
         "Здоровье": "❓",
@@ -24,78 +24,56 @@ def extract_ratings(soup) -> dict:
     try:
         logger.info("=== STARTING RATINGS EXTRACTION ===")
 
-        # Find all text that contains our category names
-        all_elements = soup.find_all(['div', 'span', 'p', 'li', 'dd', 'dt'])
+        # Find all <a> tags with category names
+        all_links = soup.find_all('a')
+        logger.info(f"Found {len(all_links)} links")
 
-        found_elements = []
+        for link in all_links:
+            link_text = link.get_text(strip=True).lower()
 
-        for elem in all_elements:
-            elem_text = elem.get_text(strip=True).lower()
+            # Check if this is a category link
+            if 'финанс' in link_text or 'здоров' in link_text or 'любов' in link_text:
+                logger.info(f"Found category link: {link_text}")
 
-            # Check if this element contains one of our categories
-            if 'финанс' in elem_text or 'здоров' in elem_text or 'любов' in elem_text:
-                if len(elem_text) < 200:  # Should be short - just category name + stars
-                    found_elements.append({
-                        'text': elem_text,
-                        'html': str(elem)[:500],
-                        'tag': elem.name,
-                        'classes': elem.get('class', [])
-                    })
+                # The next sibling should be the <ul> with stars
+                next_elem = link.find_next('ul')
 
-        logger.info(f"Found {len(found_elements)} elements with category names")
-        for i, el in enumerate(found_elements):
-            logger.info(f"Element {i}: text='{el['text'][:80]}' | tag={el['tag']} | classes={el['classes']}")
-            logger.info(f"  HTML: {el['html']}")
+                if next_elem:
+                    # Check aria-label attribute which contains "X из 5"
+                    aria_label = next_elem.get('aria-label', '')
+                    logger.info(f"aria-label: {aria_label}")
 
-        # Now try to extract ratings from found elements
-        for elem_data in found_elements:
-            # Find the actual element again from soup
-            for elem in soup.find_all(['div', 'span', 'p', 'li', 'dd', 'dt']):
-                if elem.get_text(strip=True).lower() == elem_data['text']:
-                    logger.info(f"Processing: {elem_data['text'][:50]}")
+                    # Extract number from aria-label (e.g., "5 из 5" -> 5)
+                    import re
+                    match = re.search(r'(\d+)\s*из\s*5', aria_label)
+                    if match:
+                        star_count = int(match.group(1))
+                        logger.info(f"Extracted from aria-label: {star_count} stars")
 
-                    # Try multiple strategies to find stars
-
-                    # Strategy 1: Look in the element itself
-                    star_count = _count_star_icons(elem)
-                    logger.info(f"  Strategy 1 (element itself): {star_count} stars")
-
-                    # Strategy 2: Look in next sibling
-                    if star_count == 0 and elem.next_sibling:
-                        next_elem = elem.next_sibling
-                        if hasattr(next_elem, 'find_all'):
-                            star_count = _count_star_icons(next_elem)
-                            logger.info(f"  Strategy 2 (next sibling): {star_count} stars")
-
-                    # Strategy 3: Look in parent's children
-                    if star_count == 0:
-                        parent = elem.find_parent(['div', 'li', 'section', 'dd'])
-                        if parent:
-                            star_count = _count_star_icons(parent)
-                            logger.info(f"  Strategy 3 (parent element): {star_count} stars")
-
-                    # Strategy 4: Count direct <img> tags anywhere in parent
-                    if star_count == 0:
-                        parent = elem.find_parent(['div', 'li', 'section', 'dd'])
-                        if parent:
-                            imgs = parent.find_all('img')
-                            star_count = len(imgs)
-                            logger.info(f"  Strategy 4 (all img tags): {star_count} images")
-                            for img in imgs:
-                                logger.info(f"    - img src: {img.get('src', 'no src')}")
-
-                    if star_count > 0:
-                        if 'финанс' in elem_data['text']:
+                        if 'финанс' in link_text:
                             ratings["Финансы"] = "⭐" * star_count
-                            logger.info(f"✓ Set Finance: {star_count} stars")
-                        elif 'здоров' in elem_data['text']:
+                            logger.info(f"✓ Set Finance: {star_count}")
+                        elif 'здоров' in link_text:
                             ratings["Здоровье"] = "⭐" * star_count
-                            logger.info(f"✓ Set Health: {star_count} stars")
-                        elif 'любов' in elem_data['text']:
+                            logger.info(f"✓ Set Health: {star_count}")
+                        elif 'любов' in link_text:
                             ratings["Любовь"] = "⭐" * star_count
-                            logger.info(f"✓ Set Love: {star_count} stars")
+                            logger.info(f"✓ Set Love: {star_count}")
+                    else:
+                        # Fallback: count <li> elements which represent individual stars
+                        li_count = len(next_elem.find_all('li'))
+                        logger.info(f"Fallback: counting li elements: {li_count}")
 
-                    break
+                        if li_count > 0:
+                            if 'финанс' in link_text:
+                                ratings["Финансы"] = "⭐" * li_count
+                                logger.info(f"✓ Set Finance: {li_count}")
+                            elif 'здоров' in link_text:
+                                ratings["Здоровье"] = "⭐" * li_count
+                                logger.info(f"✓ Set Health: {li_count}")
+                            elif 'любов' in link_text:
+                                ratings["Любовь"] = "⭐" * li_count
+                                logger.info(f"✓ Set Love: {li_count}")
 
         logger.info(f"=== FINAL RATINGS: {ratings} ===")
 
@@ -103,45 +81,6 @@ def extract_ratings(soup) -> dict:
         logger.error(f"Error extracting ratings: {e}", exc_info=True)
 
     return ratings
-
-def _count_star_icons(elem) -> int:
-    """Count star icon images in an element"""
-    if not elem:
-        return 0
-
-    try:
-        star_count = 0
-
-        # Method 1: Count img elements
-        imgs = elem.find_all('img', recursive=True)
-        logger.debug(f"Found {len(imgs)} img elements")
-        for img in imgs:
-            src = img.get('src', '').lower()
-            alt = img.get('alt', '').lower()
-            logger.debug(f"  IMG: src='{src}' alt='{alt}'")
-
-            # Count any img as potential star if parent mentions star/rating
-            star_count += 1
-
-        # Method 2: Count svg elements
-        svgs = elem.find_all('svg', recursive=True)
-        logger.debug(f"Found {len(svgs)} svg elements")
-        for svg in svgs:
-            classes = ' '.join(svg.get('class', [])).lower()
-            logger.debug(f"  SVG: class='{classes}'")
-            star_count += 1
-
-        # Method 3: Count span/i elements with star classes
-        stars_by_class = elem.find_all(['span', 'i'], class_=lambda x: x and ('star' in x.lower() or 'icon' in x.lower()))
-        logger.debug(f"Found {len(stars_by_class)} elements with star/icon class")
-        star_count += len(stars_by_class)
-
-        logger.info(f"Total icons counted: {star_count}")
-        return star_count
-
-    except Exception as e:
-        logger.error(f"Error counting star icons: {e}")
-        return 0
 
 
 async def fetch_horoscope(sign: str) -> str:
