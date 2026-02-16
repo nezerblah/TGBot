@@ -26,6 +26,11 @@ def _extract_update_timestamp(update: dict) -> int:
     return 0
 
 
+@router.post("/")
+async def telegram_webhook_root(request: Request, x_telegram_bot_api_secret_token: str = Header(None)):
+    return await telegram_webhook(request, x_telegram_bot_api_secret_token)
+
+
 @router.post("/webhook")
 async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: str = Header(None)):
     # If a secret is configured, require Telegram to send it via header
@@ -34,6 +39,9 @@ async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: st
         raise HTTPException(status_code=403, detail="Forbidden")
 
     update = await request.json()
+    if not isinstance(update, dict) or "update_id" not in update:
+        # Treat non-Telegram POSTs as ok (health checks, etc.)
+        return {"ok": True}
 
     # Drop duplicate or stale updates
     global _last_update_id
