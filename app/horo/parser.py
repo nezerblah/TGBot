@@ -151,6 +151,9 @@ def extract_horoscope_text(soup) -> str:
     text = container.get_text(separator='\n', strip=True)
     logger.info(f"Fallback: extracted {len(text)} characters")
     return text if text else "Не удалось получить текст гороскопа"
+
+
+async def fetch_horoscope(sign: str) -> str:
     """Fetch horoscope for a given zodiac sign with ratings"""
     # check cache
     db = SessionLocal()
