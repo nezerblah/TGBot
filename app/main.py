@@ -51,6 +51,10 @@ async def startup_event():
 async def root():
     return {"ok": True, "message": "Bot is running"}
 
+@app.post("/")
+async def root_post():
+    return {"ok": True}
+
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
