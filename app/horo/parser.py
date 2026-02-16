@@ -111,21 +111,24 @@ def extract_ratings(soup) -> dict:
 
 
 def extract_horoscope_text(soup) -> str:
-    """Extract full horoscope text from the page"""
+    """Extract only the main horoscope text block from the page"""
 
     logger.info("=== EXTRACTING HOROSCOPE TEXT ===")
 
-    # Try multiple selectors to find the main horoscope content
+    # Priority: Try to find the main horoscope content block
+    # Mail.ru usually has the main horoscope in a specific container
     possible_containers = [
-        soup.select_one('.article__text'),           # Common Mail.ru class
-        soup.select_one('[data-qa="article-text"]'),  # Data attribute
-        soup.select_one('.article__item'),
-        soup.select_one('.prediction__text'),
-        soup.select_one('article'),
-        soup.select_one('main'),
+        # Most specific selectors first
+        soup.select_one('[data-qa="horoscope-text"]'),
+        soup.select_one('.article__text'),
+        soup.select_one('.prediction'),
+        soup.select_one('[data-qa="article-text"]'),
+        # Find article tag
+        soup.find('article'),
+        # Find main tag
+        soup.find('main'),
     ]
 
-    # Find the container with actual content
     container = None
     for possible in possible_containers:
         if possible:
@@ -136,48 +139,58 @@ def extract_horoscope_text(soup) -> str:
                 break
 
     if not container:
-        logger.warning("No container found, trying alternative approach")
-        # Last resort: find all paragraphs and combine them
-        paragraphs = soup.find_all('p')
-        if paragraphs:
-            # Filter paragraphs that look like horoscope content (not too short, not too long)
-            horoscope_paragraphs = []
-            for p in paragraphs:
-                text = p.get_text(strip=True)
-                if 50 < len(text) < 2000:  # Reasonable paragraph size
-                    horoscope_paragraphs.append(text)
-
-            if horoscope_paragraphs:
-                text = '\n\n'.join(horoscope_paragraphs)
-                logger.info(f"Extracted {len(horoscope_paragraphs)} paragraphs")
-                return text
-
+        logger.warning("No container found with standard selectors")
         return "Не удалось получить текст гороскопа"
 
-    # Extract all text from container, preserving paragraph structure
-    text_parts = []
+    # Now extract only paragraphs that are direct children of the container
+    # This avoids getting nav, footer, sidebar text
+    paragraphs = []
 
-    # Get all direct text and paragraph elements
+    for elem in container.find_all('p', recursive=False):
+        text = elem.get_text(strip=True)
+        if len(text) > 30:  # Skip very short paragraphs (likely not content)
+            paragraphs.append(text)
+            logger.info(f"Found paragraph: {text[:80]}...")
+
+    # If we found direct p tags, use them
+    if paragraphs:
+        full_text = '\n\n'.join(paragraphs)
+        logger.info(f"Extracted {len(paragraphs)} paragraphs, total {len(full_text)} chars")
+        return full_text
+
+    # Fallback: look for div children with text
+    divs = []
+    for elem in container.find_all('div', recursive=False):
+        text = elem.get_text(strip=True)
+        if len(text) > 50:  # Reasonable size
+            divs.append(text)
+            logger.info(f"Found div: {text[:80]}...")
+
+    if divs:
+        full_text = '\n\n'.join(divs)
+        logger.info(f"Extracted {len(divs)} divs, total {len(full_text)} chars")
+        return full_text
+
+    # Last fallback: get all text from container but try to exclude common non-content elements
+    # Get all children and filter by text content
+    text_parts = []
     for child in container.children:
         if isinstance(child, str):
             text = child.strip()
-            if text:
+            if text and len(text) > 50:
                 text_parts.append(text)
-        elif child.name in ['p', 'div', 'span']:
+        elif hasattr(child, 'name') and child.name in ['p', 'div', 'span']:
             text = child.get_text(strip=True)
-            if text and len(text) > 20:  # Ignore very short fragments
+            if text and len(text) > 50:
                 text_parts.append(text)
 
-    # If we got parts, join them
     if text_parts:
         full_text = '\n\n'.join(text_parts)
-        logger.info(f"Extracted {len(full_text)} characters from container")
+        logger.info(f"Extracted {len(text_parts)} text parts, total {len(full_text)} chars")
         return full_text
 
-    # Fallback: just get all text from container
-    text = container.get_text(separator='\n', strip=True)
-    logger.info(f"Fallback: extracted {len(text)} characters")
-    return text if text else "Не удалось получить текст гороскопа"
+    logger.warning("Could not extract any meaningful text")
+    return "Не удалось получить текст гороскопа"
 
 
 async def fetch_horoscope(sign: str) -> str:
