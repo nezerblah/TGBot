@@ -47,7 +47,10 @@ async def setup_handlers(bot, update: types.Update):
                 ctx = data.split(':',1)[1]
                 if ctx == 'list':
                     await bot.edit_message_text('Выберите знак зодиака:', chat_id=cb.message.chat.id, message_id=cb.message.message_id, reply_markup=signs_keyboard())
-                    await bot.answer_callback_query(cb.id)
+                    try:
+                        await bot.answer_callback_query(cb.id)
+                    except Exception as e:
+                        logger.warning(f"Could not answer callback query: {e}")
     except Exception as e:
         logger.error(f"Error in setup_handlers: {e}", exc_info=True)
         raise
@@ -116,7 +119,13 @@ async def handle_subscribe(bot, chat_id: int, user_id: int, sign: str, message_i
         else:
             sub.active = True
         db.commit()
-        await bot.answer_callback_query(callback_id, text=f"Вы подписаны на {sign}")
+
+        # Try to answer callback query, but ignore if it's too old
+        try:
+            await bot.answer_callback_query(callback_id, text=f"Вы подписаны на {sign}")
+        except Exception as e:
+            logger.warning(f"Could not answer callback query: {e}")
+
         await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=sign_detail_keyboard(sign, subscribed=True))
     finally:
         db.close()
@@ -126,21 +135,33 @@ async def handle_unsubscribe(bot, chat_id: int, user_id: int, sign: str, message
     try:
         user = db.query(User).filter_by(telegram_id=user_id).first()
         if not user:
-            await bot.answer_callback_query(callback_id, text="Вы не подписаны")
+            try:
+                await bot.answer_callback_query(callback_id, text="Вы не подписаны")
+            except Exception as e:
+                logger.warning(f"Could not answer callback query: {e}")
             return
         if sign == 'all':
             db.query(Subscription).filter_by(user_id=user.id).update({'active': False})
             db.commit()
-            await bot.answer_callback_query(callback_id, text="Отписались от всех")
+            try:
+                await bot.answer_callback_query(callback_id, text="Отписались от всех")
+            except Exception as e:
+                logger.warning(f"Could not answer callback query: {e}")
             return
         sub = db.query(Subscription).filter_by(user_id=user.id, sign=sign).first()
         if sub:
             sub.active = False
             db.commit()
-            await bot.answer_callback_query(callback_id, text=f"Отписались от {sign}")
+            try:
+                await bot.answer_callback_query(callback_id, text=f"Отписались от {sign}")
+            except Exception as e:
+                logger.warning(f"Could not answer callback query: {e}")
             await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=sign_detail_keyboard(sign, subscribed=False))
         else:
-            await bot.answer_callback_query(callback_id, text="Вы не были подписаны")
+            try:
+                await bot.answer_callback_query(callback_id, text="Вы не были подписаны")
+            except Exception as e:
+                logger.warning(f"Could not answer callback query: {e}")
     finally:
         db.close()
 
