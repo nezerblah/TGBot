@@ -148,10 +148,7 @@ def _get_subscribers_stats() -> tuple[int, list[tuple[str, int]]]:
     db = SessionLocal()
     try:
         active_users = (
-            db.query(func.count(func.distinct(Subscription.user_id)))
-            .filter(Subscription.active)
-            .scalar()
-            or 0
+            db.query(func.count(func.distinct(Subscription.user_id))).filter(Subscription.active).scalar() or 0
         )
 
         stats = (
