@@ -1,11 +1,11 @@
 """Tests for handlers module."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
+
 from app.handlers import (
-    _is_valid_sign,
-    _is_duplicate_callback,
     _get_or_create_user,
+    _is_duplicate_callback,
+    _is_valid_sign,
 )
 
 

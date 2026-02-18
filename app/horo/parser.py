@@ -1,11 +1,13 @@
-import httpx
-from bs4 import BeautifulSoup
+import asyncio
+import html
+import logging
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import logging
-import asyncio
-import re
-import html
+
+import httpx
+from bs4 import BeautifulSoup
+
 from ..db import SessionLocal
 from ..models import CachedHoroscope
 
@@ -230,9 +232,7 @@ async def fetch_horoscope(sign: str) -> str:
 
                 # Double check that message fits Telegram limits
                 if len(output) > TELEGRAM_MESSAGE_LIMIT:
-                    logger.warning(
-                        f"Message still too long ({len(output)} chars), truncating more aggressively"
-                    )
+                    logger.warning(f"Message still too long ({len(output)} chars), truncating more aggressively")
                     text = truncate_text(text, TELEGRAM_MESSAGE_LIMIT - RATINGS_RESERVE - 200)
                     output = f"🌟 {text}\n\n"
                     output += "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -265,4 +265,3 @@ async def fetch_horoscope(sign: str) -> str:
                     await asyncio.sleep(1 + attempt)
 
         return "Не удалось получить гороскоп — попробуйте позже."
-

@@ -1,7 +1,5 @@
-import asyncio
-
-from app.db import Base, engine, SessionLocal
 from app import models
+from app.db import Base, SessionLocal, engine
 
 
 def test_create_db():
@@ -15,4 +13,3 @@ def test_create_db():
         assert db.query(models.User).filter_by(telegram_id=12345).first() is not None
     finally:
         db.close()
-

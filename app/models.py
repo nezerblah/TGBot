@@ -1,18 +1,20 @@
+import datetime
+
 from sqlalchemy import (
-    Column,
-    Integer,
     BigInteger,
-    String,
     Boolean,
-    DateTime,
+    Column,
     Date,
+    DateTime,
     ForeignKey,
-    UniqueConstraint,
+    Integer,
+    String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
+
 from .db import Base
-import datetime
 
 
 class User(Base):

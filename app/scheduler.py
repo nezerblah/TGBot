@@ -1,12 +1,14 @@
+import asyncio
+import logging
+import os
+from zoneinfo import ZoneInfo
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from zoneinfo import ZoneInfo
-import logging
-import asyncio
-import os
+
 from .db import SessionLocal
-from .models import Subscription, User
 from .horo.parser import fetch_horoscope
+from .models import Subscription, User
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ def _load_recipients_by_sign() -> dict[str, list[int]]:
         rows = (
             db.query(Subscription.sign, User.telegram_id)
             .join(User, User.id == Subscription.user_id)
-            .filter(Subscription.active == True)
+            .filter(Subscription.active)
             .all()
         )
         recipients: dict[str, list[int]] = {}

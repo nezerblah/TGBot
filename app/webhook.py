@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Request, Header, HTTPException
-import os
-import logging
-import time
 import asyncio
+import logging
+import os
+import time
+
+from fastapi import APIRouter, Header, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
+
 from .bot import process_update
 from .db import SessionLocal
 from .models import ProcessedUpdate

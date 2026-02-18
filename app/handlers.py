@@ -1,14 +1,16 @@
-from aiogram import types
+import asyncio
 import logging
-from collections import OrderedDict
-from .keyboards import signs_keyboard, sign_detail_keyboard, SIGN_TITLES, ZODIAC_SIGNS
-from .db import SessionLocal
-from .models import User, Subscription
-from .horo.parser import fetch_horoscope
-from sqlalchemy import func
 import os
 import time
-import asyncio
+from collections import OrderedDict
+
+from aiogram import types
+from sqlalchemy import func
+
+from .db import SessionLocal
+from .horo.parser import fetch_horoscope
+from .keyboards import SIGN_TITLES, ZODIAC_SIGNS, sign_detail_keyboard, signs_keyboard
+from .models import Subscription, User
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +24,7 @@ _VALID_SIGNS = frozenset(ZODIAC_SIGNS)
 
 
 def _cleanup_callback_cache(now: float) -> None:
-    stale_keys = [
-        key
-        for key, timestamp in _last_callback.items()
-        if now - timestamp >= _CALLBACK_DEBOUNCE_SECONDS
-    ]
+    stale_keys = [key for key, timestamp in _last_callback.items() if now - timestamp >= _CALLBACK_DEBOUNCE_SECONDS]
     for key in stale_keys:
         _last_callback.pop(key, None)
 
@@ -152,15 +150,12 @@ def _get_subscribers_stats() -> tuple[int, list[tuple[str, int]]]:
     db = SessionLocal()
     try:
         active_users = (
-            db.query(func.count(func.distinct(Subscription.user_id)))
-            .filter(Subscription.active == True)
-            .scalar()
-            or 0
+            db.query(func.count(func.distinct(Subscription.user_id))).filter(Subscription.active).scalar() or 0
         )
 
         stats = (
             db.query(Subscription.sign, func.count(Subscription.id))
-            .filter(Subscription.active == True)
+            .filter(Subscription.active)
             .group_by(Subscription.sign)
             .all()
         )

@@ -1,12 +1,14 @@
-from fastapi import FastAPI
 import logging
-from .webhook import router as webhook_router
+import os
+
+from fastapi import FastAPI
+from slowapi.errors import RateLimitExceeded
+
 from .bot import initialize_bot, setup_bot_commands
-from .scheduler import setup_scheduler
 from .db import Base, engine
 from .rate_limit import limiter, rate_limit_handler
-from slowapi.errors import RateLimitExceeded
-import os
+from .scheduler import setup_scheduler
+from .webhook import router as webhook_router
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
