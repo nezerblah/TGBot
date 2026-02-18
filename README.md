@@ -12,6 +12,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+**Примечание**: Проект использует FastAPI 0.109+ и aiogram 3.3+, которые требуют pydantic 2.x. Все зависимости совместимы с Python 3.12+.
+
 2. Задайте переменные окружения:
 
 ```bash
