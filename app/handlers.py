@@ -22,11 +22,7 @@ _VALID_SIGNS = frozenset(ZODIAC_SIGNS)
 
 
 def _cleanup_callback_cache(now: float) -> None:
-    stale_keys = [
-        key
-        for key, timestamp in _last_callback.items()
-        if now - timestamp >= _CALLBACK_DEBOUNCE_SECONDS
-    ]
+    stale_keys = [key for key, timestamp in _last_callback.items() if now - timestamp >= _CALLBACK_DEBOUNCE_SECONDS]
     for key in stale_keys:
         _last_callback.pop(key, None)
 

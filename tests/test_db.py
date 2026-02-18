@@ -13,4 +13,3 @@ def test_create_db():
         assert db.query(models.User).filter_by(telegram_id=12345).first() is not None
     finally:
         db.close()
-
