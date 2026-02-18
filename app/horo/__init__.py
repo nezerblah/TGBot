@@ -1,2 +1,1 @@
 # Horoscope parser module
-

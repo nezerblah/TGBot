@@ -9,10 +9,7 @@ from slowapi.errors import RateLimitExceeded
 import os
 
 # Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="TGBot", description="Telegram Horoscope Bot")
@@ -27,6 +24,7 @@ try:
     logger.info("Database tables created successfully")
 except Exception as e:
     logger.warning(f"Warning: Could not create tables on startup: {e}")
+
 
 # start scheduler once on startup
 @app.on_event("startup")
@@ -56,9 +54,11 @@ async def startup_event():
             logger.warning(f"Could not reset webhook: {e}")
     logger.info("Scheduler started")
 
+
 @app.get("/")
 async def root():
     return {"ok": True, "message": "Bot is running"}
+
 
 @app.get("/health")
 async def health():

@@ -10,7 +10,7 @@ def test_load_recipients_by_sign_groups_correctly(mock_session_class: MagicMock)
     """Recipients should be grouped by zodiac sign."""
     mock_db = MagicMock()
     mock_session_class.return_value = mock_db
-    
+
     mock_db.query.return_value.join.return_value.filter.return_value.all.return_value = [
         ("aries", 100),
         ("aries", 101),
@@ -34,7 +34,7 @@ def test_load_recipients_by_sign_handles_empty_result(mock_session_class: MagicM
     """Empty database should return empty dict."""
     mock_db = MagicMock()
     mock_session_class.return_value = mock_db
-    
+
     mock_db.query.return_value.join.return_value.filter.return_value.all.return_value = []
 
     result = _load_recipients_by_sign()

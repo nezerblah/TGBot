@@ -19,6 +19,7 @@ TELEGRAM_MESSAGE_LIMIT = 4096
 # Reserve space for ratings section (approximately 200 chars)
 RATINGS_RESERVE = 200
 
+
 def truncate_text(text: str, max_length: int = TELEGRAM_MESSAGE_LIMIT - RATINGS_RESERVE) -> str:
     """Truncate text to fit within Telegram limits"""
     if len(text) <= max_length:
@@ -28,15 +29,15 @@ def truncate_text(text: str, max_length: int = TELEGRAM_MESSAGE_LIMIT - RATINGS_
     truncated = text[:max_length]
 
     # Find last space to avoid cutting in the middle of a word
-    last_space = truncated.rfind('\n\n')
+    last_space = truncated.rfind("\n\n")
     if last_space > max_length - 100:  # If there's a paragraph break close to the limit
         truncated = truncated[:last_space]
     else:
-        last_space = truncated.rfind(' ')
+        last_space = truncated.rfind(" ")
         if last_space > 0:
             truncated = truncated[:last_space]
 
-    truncated = truncated.rstrip() + '...'
+    truncated = truncated.rstrip() + "..."
     logger.info(f"Truncated text from {len(text)} to {len(truncated)} chars")
     return truncated
 
@@ -48,63 +49,59 @@ def sanitize_for_telegram_html(text: str) -> str:
 
 def extract_ratings(soup) -> dict:
     """Extract star ratings from horo.mail.ru using aria-label attribute"""
-    ratings = {
-        "Финансы": "❓",
-        "Здоровье": "❓",
-        "Любовь": "❓"
-    }
+    ratings = {"Финансы": "❓", "Здоровье": "❓", "Любовь": "❓"}
 
     try:
         logger.info("=== STARTING RATINGS EXTRACTION ===")
 
         # Find all <a> tags with category names
-        all_links = soup.find_all('a')
+        all_links = soup.find_all("a")
         logger.info(f"Found {len(all_links)} links")
 
         for link in all_links:
             link_text = link.get_text(strip=True).lower()
 
             # Check if this is a category link
-            if 'финанс' in link_text or 'здоров' in link_text or 'любов' in link_text:
+            if "финанс" in link_text or "здоров" in link_text or "любов" in link_text:
                 logger.info(f"Found category link: {link_text}")
 
                 # The next sibling should be the <ul> with stars
-                next_elem = link.find_next('ul')
+                next_elem = link.find_next("ul")
 
                 if next_elem:
                     # Check aria-label attribute which contains "X из 5"
-                    aria_label = next_elem.get('aria-label', '')
+                    aria_label = next_elem.get("aria-label", "")
                     logger.info(f"aria-label: {aria_label}")
 
                     # Extract number from aria-label (e.g., "5 из 5" -> 5)
-                    match = re.search(r'(\d+)\s*из\s*5', aria_label)
+                    match = re.search(r"(\d+)\s*из\s*5", aria_label)
                     if match:
                         star_count = max(0, min(int(match.group(1)), 5))
                         logger.info(f"Extracted from aria-label: {star_count} stars")
 
-                        if 'финанс' in link_text:
+                        if "финанс" in link_text:
                             ratings["Финансы"] = "⭐" * star_count
                             logger.info(f"✓ Set Finance: {star_count}")
-                        elif 'здоров' in link_text:
+                        elif "здоров" in link_text:
                             ratings["Здоровье"] = "⭐" * star_count
                             logger.info(f"✓ Set Health: {star_count}")
-                        elif 'любов' in link_text:
+                        elif "любов" in link_text:
                             ratings["Любовь"] = "⭐" * star_count
                             logger.info(f"✓ Set Love: {star_count}")
                     else:
                         # Fallback: count <li> elements which represent individual stars
-                        li_count = len(next_elem.find_all('li'))
+                        li_count = len(next_elem.find_all("li"))
                         li_count = max(0, min(li_count, 5))
                         logger.info(f"Fallback: counting li elements: {li_count}")
 
                         if li_count > 0:
-                            if 'финанс' in link_text:
+                            if "финанс" in link_text:
                                 ratings["Финансы"] = "⭐" * li_count
                                 logger.info(f"✓ Set Finance: {li_count}")
-                            elif 'здоров' in link_text:
+                            elif "здоров" in link_text:
                                 ratings["Здоровье"] = "⭐" * li_count
                                 logger.info(f"✓ Set Health: {li_count}")
-                            elif 'любов' in link_text:
+                            elif "любов" in link_text:
                                 ratings["Любовь"] = "⭐" * li_count
                                 logger.info(f"✓ Set Love: {li_count}")
 
@@ -123,7 +120,7 @@ def extract_horoscope_text(soup) -> str:
 
     # The main horoscope content is in divs with article-item-type="html"
     # These contain the actual horoscope paragraphs
-    horoscope_blocks = soup.find_all('div', attrs={'article-item-type': 'html'})
+    horoscope_blocks = soup.find_all("div", attrs={"article-item-type": "html"})
 
     logger.info(f"Found {len(horoscope_blocks)} horoscope blocks")
 
@@ -132,7 +129,7 @@ def extract_horoscope_text(soup) -> str:
 
         for block in horoscope_blocks:
             # Each block contains a <p> tag with the actual text
-            p_tag = block.find('p')
+            p_tag = block.find("p")
             if p_tag:
                 text = p_tag.get_text(strip=True)
                 if text and len(text) > 30:  # Skip very short text
@@ -140,7 +137,7 @@ def extract_horoscope_text(soup) -> str:
                     logger.info(f"Extracted paragraph: {text[:80]}...")
 
         if paragraphs:
-            full_text = '\n\n'.join(paragraphs)
+            full_text = "\n\n".join(paragraphs)
             logger.info(f"Extracted {len(paragraphs)} paragraphs, total {len(full_text)} chars")
             return full_text
 
@@ -148,11 +145,11 @@ def extract_horoscope_text(soup) -> str:
     logger.warning("No article-item-type blocks found, trying fallback")
 
     possible_containers = [
-        soup.select_one('.article__text'),
+        soup.select_one(".article__text"),
         soup.select_one('[data-qa="article-text"]'),
-        soup.select_one('.prediction'),
-        soup.find('article'),
-        soup.find('main'),
+        soup.select_one(".prediction"),
+        soup.find("article"),
+        soup.find("main"),
     ]
 
     container = None
@@ -170,13 +167,13 @@ def extract_horoscope_text(soup) -> str:
 
     # Extract paragraphs from container
     paragraphs = []
-    for elem in container.find_all('p', recursive=False):
+    for elem in container.find_all("p", recursive=False):
         text = elem.get_text(strip=True)
         if len(text) > 30:
             paragraphs.append(text)
 
     if paragraphs:
-        full_text = '\n\n'.join(paragraphs)
+        full_text = "\n\n".join(paragraphs)
         logger.info(f"Extracted {len(paragraphs)} paragraphs from fallback")
         return full_text
 
@@ -202,9 +199,7 @@ async def fetch_horoscope(sign: str) -> str:
         db.close()
 
     url = BASE_URL + SIGN_PATH.format(sign=sign)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0"}
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         for attempt in range(3):
@@ -235,7 +230,9 @@ async def fetch_horoscope(sign: str) -> str:
 
                 # Double check that message fits Telegram limits
                 if len(output) > TELEGRAM_MESSAGE_LIMIT:
-                    logger.warning(f"Message still too long ({len(output)} chars), truncating more aggressively")
+                    logger.warning(
+                        f"Message still too long ({len(output)} chars), truncating more aggressively"
+                    )
                     text = truncate_text(text, TELEGRAM_MESSAGE_LIMIT - RATINGS_RESERVE - 200)
                     output = f"🌟 {text}\n\n"
                     output += "━━━━━━━━━━━━━━━━━━━━━━\n"

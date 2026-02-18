@@ -29,6 +29,7 @@ def get_bot() -> Bot:
         raise RuntimeError("Bot is not initialized. Call initialize_bot() at startup.")
     return bot
 
+
 async def setup_bot_commands() -> None:
     bot_instance = get_bot()
     commands = [
@@ -39,7 +40,9 @@ async def setup_bot_commands() -> None:
     ]
     await bot_instance.set_my_commands(commands)
 
+
 # We won't start polling; webhook calls process_update
+
 
 async def process_update(update: dict):
     """Process incoming webhook update"""

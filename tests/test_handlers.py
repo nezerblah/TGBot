@@ -59,7 +59,7 @@ def test_get_or_create_user_returns_existing_user(mock_session_class: MagicMock)
     """Existing user should be returned without creating new one."""
     mock_db = MagicMock()
     mock_session_class.return_value = mock_db
-    
+
     existing_user = MagicMock()
     existing_user.telegram_id = 12345
     mock_db.query.return_value.filter_by.return_value.first.return_value = existing_user
