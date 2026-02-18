@@ -2,7 +2,8 @@ import logging
 import os
 
 from aiogram import Bot, types
-from aiogram.types import BotCommand, DefaultBotProperties
+from aiogram.client.default import DefaultBotProperties
+from aiogram.types import BotCommand
 
 from .handlers import setup_handlers
 

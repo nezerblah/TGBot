@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
 
 
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+async def rate_limit_handler(request: Request, exc: Exception) -> Response:
     """Handle rate limit exceeded exceptions."""
     logger.warning(f"Rate limit exceeded for {get_remote_address(request)}")
     return JSONResponse(
