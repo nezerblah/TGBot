@@ -1,7 +1,7 @@
 import os
 import logging
 from aiogram import Bot, types
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, DefaultBotProperties
 from .handlers import setup_handlers
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,10 @@ def initialize_bot() -> Bot:
     if not bot_token:
         raise RuntimeError("BOT_TOKEN environment variable is not set.")
 
-    bot = Bot(token=bot_token, parse_mode="HTML")
+    bot = Bot(
+        token=bot_token,
+        default=DefaultBotProperties(parse_mode="HTML"),
+    )
     return bot
 
 
