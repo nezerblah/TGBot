@@ -244,8 +244,9 @@ async def handle_start(bot, msg: types.Message):
         msg.from_user.first_name,
         msg.from_user.last_name,
     )
-    text = "Привет! Я бот с гороскопами.\n" "Выберите знак зодиака или используйте команды из меню."
+    text = "Привет! Я бот с гороскопами.\nВыберите знак зодиака или используйте команды из меню."
     await bot.send_message(msg.chat.id, text, reply_markup=signs_keyboard())
+
 
 async def handle_help(bot, msg: types.Message):
     text = (

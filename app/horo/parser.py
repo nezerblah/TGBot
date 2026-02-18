@@ -199,9 +199,7 @@ async def fetch_horoscope(sign: str) -> str:
         db.close()
 
     url = BASE_URL + SIGN_PATH.format(sign=sign)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0"}
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         for attempt in range(3):
@@ -232,7 +230,9 @@ async def fetch_horoscope(sign: str) -> str:
 
                 # Double check that message fits Telegram limits
                 if len(output) > TELEGRAM_MESSAGE_LIMIT:
-                    logger.warning(f"Message still too long ({len(output)} chars), truncating more aggressively")
+                    logger.warning(
+                        f"Message still too long ({len(output)} chars), truncating more aggressively"
+                    )
                     text = truncate_text(text, TELEGRAM_MESSAGE_LIMIT - RATINGS_RESERVE - 200)
                     output = f"🌟 {text}\n\n"
                     output += "━━━━━━━━━━━━━━━━━━━━━━\n"
