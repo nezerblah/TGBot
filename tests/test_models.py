@@ -45,7 +45,7 @@ def test_subscription_unique_constraint(db_session) -> None:
     # Try to add duplicate subscription
     sub2 = Subscription(user_id=user.id, sign="aries", active=True)
     db_session.add(sub2)
-    
+
     with pytest.raises(Exception):  # IntegrityError
         db_session.commit()
 
@@ -61,7 +61,7 @@ def test_cached_horoscope_unique_constraint(db_session) -> None:
 
     cached2 = CachedHoroscope(sign="aries", date=today, content="Different content")
     db_session.add(cached2)
-    
+
     with pytest.raises(Exception):  # IntegrityError
         db_session.commit()
 
@@ -74,7 +74,7 @@ def test_processed_update_unique_constraint(db_session) -> None:
 
     update2 = ProcessedUpdate(update_id=123456)
     db_session.add(update2)
-    
+
     with pytest.raises(Exception):  # IntegrityError
         db_session.commit()
 

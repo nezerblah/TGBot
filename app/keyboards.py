@@ -36,11 +36,7 @@ def signs_keyboard():
     for i in range(0, len(ZODIAC_SIGNS), 3):
         row = []
         for sign in ZODIAC_SIGNS[i : i + 3]:
-            row.append(
-                InlineKeyboardButton(
-                    text=SIGN_TITLES.get(sign, sign.title()), callback_data=f"sign:{sign}"
-                )
-            )
+            row.append(InlineKeyboardButton(text=SIGN_TITLES.get(sign, sign.title()), callback_data=f"sign:{sign}"))
         buttons.append(row)
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
