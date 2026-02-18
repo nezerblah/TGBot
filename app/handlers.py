@@ -52,7 +52,12 @@ def _is_duplicate_callback(user_id: int, data: str) -> bool:
     return False
 
 
-def _get_or_create_user(telegram_id: int, username: str | None = None, first_name: str | None = None, last_name: str | None = None) -> tuple[User, bool]:
+def _get_or_create_user(
+    telegram_id: int,
+    username: str | None = None,
+    first_name: str | None = None,
+    last_name: str | None = None,
+) -> tuple[User, bool]:
     db = SessionLocal()
     try:
         user = db.query(User).filter_by(telegram_id=telegram_id).first()
@@ -171,17 +176,17 @@ async def setup_handlers(bot, update: types.Update):
             msg = update.message
             logger.info(f"Message from {msg.from_user.id}: {msg.text}")
             if msg.text:
-                if msg.text.startswith('/start'):
+                if msg.text.startswith("/start"):
                     await handle_start(bot, msg)
-                elif msg.text.startswith('/list'):
+                elif msg.text.startswith("/list"):
                     await handle_list(bot, msg)
-                elif msg.text.startswith('/me'):
+                elif msg.text.startswith("/me"):
                     await handle_me(bot, msg)
-                elif msg.text.startswith('/help'):
+                elif msg.text.startswith("/help"):
                     await handle_help(bot, msg)
-                elif msg.text.startswith('/subscribers') and msg.from_user.id == ADMIN_ID:
+                elif msg.text.startswith("/subscribers") and msg.from_user.id == ADMIN_ID:
                     await handle_subscribers(bot, msg)
-                elif msg.text.startswith('/send_now') and msg.from_user.id == ADMIN_ID:
+                elif msg.text.startswith("/send_now") and msg.from_user.id == ADMIN_ID:
                     await handle_send_now(bot, msg)
                 else:
                     await bot.send_message(msg.chat.id, "Неизвестная команда. Используйте /list или /start")
@@ -195,28 +200,33 @@ async def setup_handlers(bot, update: types.Update):
                     pass
                 return
             data = cb.data
-            if data.startswith('sign:'):
-                sign = data.split(':', 1)[1]
+            if data.startswith("sign:"):
+                sign = data.split(":", 1)[1]
                 if not _is_valid_sign(sign):
                     await bot.answer_callback_query(cb.id, text="Некорректный знак")
                     return
                 await handle_show_sign(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
-            elif data.startswith('sub:'):
-                sign = data.split(':', 1)[1]
+            elif data.startswith("sub:"):
+                sign = data.split(":", 1)[1]
                 if not _is_valid_sign(sign):
                     await bot.answer_callback_query(cb.id, text="Некорректный знак")
                     return
                 await handle_subscribe(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
-            elif data.startswith('unsub:'):
-                sign = data.split(':', 1)[1]
+            elif data.startswith("unsub:"):
+                sign = data.split(":", 1)[1]
                 if sign != "all" and not _is_valid_sign(sign):
                     await bot.answer_callback_query(cb.id, text="Некорректный знак")
                     return
                 await handle_unsubscribe(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
-            elif data.startswith('back:'):
-                ctx = data.split(':',1)[1]
-                if ctx == 'list':
-                    await bot.edit_message_text('Выберите знак зодиака:', chat_id=cb.message.chat.id, message_id=cb.message.message_id, reply_markup=signs_keyboard())
+            elif data.startswith("back:"):
+                ctx = data.split(":", 1)[1]
+                if ctx == "list":
+                    await bot.edit_message_text(
+                        "Выберите знак зодиака:",
+                        chat_id=cb.message.chat.id,
+                        message_id=cb.message.message_id,
+                        reply_markup=signs_keyboard(),
+                    )
                     try:
                         await bot.answer_callback_query(cb.id)
                     except Exception as e:
@@ -224,6 +234,7 @@ async def setup_handlers(bot, update: types.Update):
     except Exception as e:
         logger.error(f"Error in setup_handlers: {e}", exc_info=True)
         raise
+
 
 async def handle_start(bot, msg: types.Message):
     await asyncio.to_thread(
@@ -236,8 +247,9 @@ async def handle_start(bot, msg: types.Message):
     text = (
         "Привет! Я бот с гороскопами.\n"
         "Выберите знак зодиака или используйте команды из меню."
-    )
+    )  
     await bot.send_message(msg.chat.id, text, reply_markup=signs_keyboard())
+
 
 async def handle_help(bot, msg: types.Message):
     text = (
@@ -249,8 +261,10 @@ async def handle_help(bot, msg: types.Message):
     )
     await bot.send_message(msg.chat.id, text)
 
+
 async def handle_list(bot, msg: types.Message):
     await bot.send_message(msg.chat.id, "Выберите знак:", reply_markup=signs_keyboard())
+
 
 async def handle_me(bot, msg: types.Message):
     subs = await asyncio.to_thread(_get_user_subscriptions, msg.from_user.id)
@@ -272,6 +286,7 @@ async def handle_me(bot, msg: types.Message):
     kb = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     await bot.send_message(msg.chat.id, text, reply_markup=kb)
 
+
 async def handle_show_sign(bot, chat_id: int, user_id: int, sign: str, message_id: int, callback_id: str):
     subscribed = await asyncio.to_thread(_is_subscribed, user_id, sign)
     text = await fetch_horoscope(sign)
@@ -281,6 +296,7 @@ async def handle_show_sign(bot, chat_id: int, user_id: int, sign: str, message_i
         message_id=message_id,
         reply_markup=sign_detail_keyboard(sign, subscribed=subscribed),
     )
+
 
 async def handle_subscribe(bot, chat_id: int, user_id: int, sign: str, message_id: int, callback_id: str):
     was_updated = await asyncio.to_thread(_subscribe_user, user_id, sign)
@@ -299,6 +315,7 @@ async def handle_subscribe(bot, chat_id: int, user_id: int, sign: str, message_i
             )
         except Exception as e:
             logger.warning(f"Could not edit message reply markup: {e}")
+
 
 async def handle_unsubscribe(bot, chat_id: int, user_id: int, sign: str, message_id: int, callback_id: str):
     unsubscribed = await asyncio.to_thread(_unsubscribe_user, user_id, sign)
@@ -325,6 +342,7 @@ async def handle_unsubscribe(bot, chat_id: int, user_id: int, sign: str, message
         except Exception as e:
             logger.warning(f"Could not edit message reply markup: {e}")
 
+
 async def handle_subscribers(bot, msg: types.Message):
     active_users, stats = await asyncio.to_thread(_get_subscribers_stats)
     lines = [f"Активных пользователей: {active_users}"]
@@ -335,8 +353,10 @@ async def handle_subscribers(bot, msg: types.Message):
 
     await bot.send_message(msg.chat.id, "\n".join(lines))
 
+
 async def handle_send_now(bot, msg: types.Message):
     # trigger send
     from .scheduler import send_daily
+
     await send_daily(bot)
     await bot.send_message(msg.chat.id, "Рассылка отправлена")

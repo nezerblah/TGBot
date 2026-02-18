@@ -29,6 +29,7 @@ def _load_recipients_by_sign() -> dict[str, list[int]]:
     finally:
         db.close()
 
+
 async def send_daily(bot):
     """Send daily horoscopes to all subscribers"""
     try:
@@ -70,7 +71,7 @@ def setup_scheduler(bot):
             send_daily,
             CronTrigger(hour=hour, minute=minute, timezone=MSK_ZONE),
             args=[bot],
-            id='send_daily',
+            id="send_daily",
             replace_existing=True,
             max_instances=1,
             coalesce=True,
