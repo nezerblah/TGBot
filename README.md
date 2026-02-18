@@ -55,6 +55,16 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 - Парсер гороскопа: `app/horo/parser.py`
 - База данных: SQLite через SQLAlchemy (`app/db.py`)
 - Планировщик: APScheduler (`app/scheduler.py`)
+- Rate limiting: slowapi (60 req/min per IP)
+
+## Безопасность
+
+- ✅ Webhook защищён `WEBHOOK_SECRET` токеном
+- ✅ Дедупликация updates через БД
+- ✅ Фильтрация устаревших updates (300 секунд по умолчанию)
+- ✅ Sanitization HTML перед отправкой
+- ✅ Input validation для знаков зодиака
+- ✅ Rate limiting 60 req/min per IP
 
 ## Тесты
 

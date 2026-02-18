@@ -1,5 +1,5 @@
 import os
-import requests
+import httpx
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
@@ -10,9 +10,8 @@ if not BOT_TOKEN or not WEBHOOK_URL or not WEBHOOK_SECRET:
     exit(1)
 
 url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook"
-# use JSON body and set secret_token so Telegram will include the header X-Telegram-Bot-Api-Secret-Token
-payload = {"url": WEBHOOK_URL}
-payload["secret_token"] = WEBHOOK_SECRET
+payload = {"url": WEBHOOK_URL, "secret_token": WEBHOOK_SECRET}
 
-r = requests.post(url, json=payload)
-print(r.status_code, r.text)
+with httpx.Client(timeout=30.0) as client:
+    r = client.post(url, json=payload)
+    print(r.status_code, r.text)

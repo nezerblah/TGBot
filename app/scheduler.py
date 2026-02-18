@@ -10,7 +10,7 @@ from .horo.parser import fetch_horoscope
 
 logger = logging.getLogger(__name__)
 
-MSE_ZONE = ZoneInfo("Europe/Moscow")
+MSK_ZONE = ZoneInfo("Europe/Moscow")
 
 
 def _load_recipients_by_sign() -> dict[str, list[int]]:
@@ -64,11 +64,11 @@ def setup_scheduler(bot):
         hour = int(os.getenv("SCHEDULER_HOUR_MSK", "11"))
         minute = int(os.getenv("SCHEDULER_MINUTE_MSK", "0"))
 
-        sched = AsyncIOScheduler(timezone=MSE_ZONE)
+        sched = AsyncIOScheduler(timezone=MSK_ZONE)
         # register coroutine job directly; pass bot as arg
         sched.add_job(
             send_daily,
-            CronTrigger(hour=hour, minute=minute, timezone=MSE_ZONE),
+            CronTrigger(hour=hour, minute=minute, timezone=MSK_ZONE),
             args=[bot],
             id='send_daily',
             replace_existing=True,

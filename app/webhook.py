@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from .bot import process_update
 from .db import SessionLocal
 from .models import ProcessedUpdate
+from .rate_limit import limiter
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -48,11 +49,13 @@ def _mark_update_processed(update_id: int) -> bool:
 
 
 @router.post("/")
+@limiter.limit("60/minute")
 async def telegram_webhook_root(request: Request, x_telegram_bot_api_secret_token: str = Header(None)):
     return await telegram_webhook(request, x_telegram_bot_api_secret_token)
 
 
 @router.post("/webhook")
+@limiter.limit("60/minute")
 async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: str = Header(None)):
     webhook_secret = _get_webhook_secret()
 
@@ -88,6 +91,5 @@ async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: st
         await process_update(update)
     except Exception as e:
         logger.error(f"Error processing webhook: {e}", exc_info=True)
-        raise
 
     return {"ok": True}

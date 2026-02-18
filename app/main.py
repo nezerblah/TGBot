@@ -4,6 +4,8 @@ from .webhook import router as webhook_router
 from .bot import initialize_bot, setup_bot_commands
 from .scheduler import setup_scheduler
 from .db import Base, engine
+from .rate_limit import limiter, rate_limit_handler
+from slowapi.errors import RateLimitExceeded
 import os
 
 # Setup logging
@@ -14,6 +16,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="TGBot", description="Telegram Horoscope Bot")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 app.include_router(webhook_router)
 
 # create tables if not exist (simple approach)

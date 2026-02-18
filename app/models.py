@@ -10,7 +10,7 @@ class User(Base):
     username = Column(String, nullable=True)
     first_name = Column(String, nullable=True)
     last_name = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
     subscriptions = relationship("Subscription", back_populates="user")
 
 class Subscription(Base):
@@ -19,7 +19,7 @@ class Subscription(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     sign = Column(String, nullable=False)
     active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
     user = relationship("User", back_populates="subscriptions")
     __table_args__ = (UniqueConstraint('user_id', 'sign', name='_user_sign_uc'),)
 
@@ -29,7 +29,7 @@ class CachedHoroscope(Base):
     sign = Column(String, nullable=False, index=True)
     date = Column(Date, nullable=False, index=True)
     content = Column(Text, nullable=False)
-    fetched_at = Column(DateTime, default=datetime.datetime.utcnow)
+    fetched_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
     __table_args__ = (UniqueConstraint('sign', 'date', name='_sign_date_uc'),)
 
 
@@ -37,4 +37,4 @@ class ProcessedUpdate(Base):
     __tablename__ = "processed_updates"
     id = Column(Integer, primary_key=True, index=True)
     update_id = Column(BigInteger, unique=True, index=True, nullable=False)
-    processed_at = Column(DateTime, default=datetime.datetime.utcnow)
+    processed_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
