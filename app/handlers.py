@@ -1,29 +1,167 @@
 from aiogram import types
 import logging
-from .keyboards import signs_keyboard, sign_detail_keyboard, SIGN_TITLES
+from collections import OrderedDict
+from .keyboards import signs_keyboard, sign_detail_keyboard, SIGN_TITLES, ZODIAC_SIGNS
 from .db import SessionLocal
 from .models import User, Subscription
 from .horo.parser import fetch_horoscope
 from sqlalchemy import func
 import os
 import time
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 _CALLBACK_DEBOUNCE_SECONDS = 1.0
-_last_callback = {}
+_CALLBACK_CACHE_MAX_SIZE = 5000
+_last_callback: OrderedDict[tuple[int, str], float] = OrderedDict()
+
+_VALID_SIGNS = frozenset(ZODIAC_SIGNS)
+
+
+def _cleanup_callback_cache(now: float) -> None:
+    stale_keys = [
+        key
+        for key, timestamp in _last_callback.items()
+        if now - timestamp >= _CALLBACK_DEBOUNCE_SECONDS
+    ]
+    for key in stale_keys:
+        _last_callback.pop(key, None)
+
+    while len(_last_callback) > _CALLBACK_CACHE_MAX_SIZE:
+        _last_callback.popitem(last=False)
+
+
+def _is_valid_sign(sign: str) -> bool:
+    return sign in _VALID_SIGNS
 
 
 def _is_duplicate_callback(user_id: int, data: str) -> bool:
     key = (user_id, data)
     now = time.monotonic()
+    _cleanup_callback_cache(now)
+
     last = _last_callback.get(key)
     if last and now - last < _CALLBACK_DEBOUNCE_SECONDS:
         return True
+
     _last_callback[key] = now
+    _last_callback.move_to_end(key)
     return False
+
+
+def _get_or_create_user(telegram_id: int, username: str | None = None, first_name: str | None = None, last_name: str | None = None) -> tuple[User, bool]:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(telegram_id=telegram_id).first()
+        created = False
+        if not user:
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                first_name=first_name,
+                last_name=last_name,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            created = True
+        return user, created
+    finally:
+        db.close()
+
+
+def _get_user_subscriptions(telegram_id: int) -> list[str]:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(telegram_id=telegram_id).first()
+        if not user:
+            return []
+        return [subscription.sign for subscription in user.subscriptions if subscription.active]
+    finally:
+        db.close()
+
+
+def _is_subscribed(telegram_id: int, sign: str) -> bool:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(telegram_id=telegram_id).first()
+        if not user:
+            return False
+        sub = db.query(Subscription).filter_by(user_id=user.id, sign=sign, active=True).first()
+        return bool(sub)
+    finally:
+        db.close()
+
+
+def _subscribe_user(telegram_id: int, sign: str) -> bool:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(telegram_id=telegram_id).first()
+        if not user:
+            user = User(telegram_id=telegram_id)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+        sub = db.query(Subscription).filter_by(user_id=user.id, sign=sign).first()
+        was_subscribed = bool(sub and sub.active)
+
+        if not sub:
+            db.add(Subscription(user_id=user.id, sign=sign, active=True))
+        else:
+            sub.active = True
+
+        db.commit()
+        return not was_subscribed
+    finally:
+        db.close()
+
+
+def _unsubscribe_user(telegram_id: int, sign: str) -> bool:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(telegram_id=telegram_id).first()
+        if not user:
+            return False
+
+        if sign == "all":
+            db.query(Subscription).filter_by(user_id=user.id).update({"active": False})
+            db.commit()
+            return True
+
+        sub = db.query(Subscription).filter_by(user_id=user.id, sign=sign).first()
+        if not sub or not sub.active:
+            return False
+
+        sub.active = False
+        db.commit()
+        return True
+    finally:
+        db.close()
+
+
+def _get_subscribers_stats() -> tuple[int, list[tuple[str, int]]]:
+    db = SessionLocal()
+    try:
+        active_users = (
+            db.query(func.count(func.distinct(Subscription.user_id)))
+            .filter(Subscription.active == True)
+            .scalar()
+            or 0
+        )
+
+        stats = (
+            db.query(Subscription.sign, func.count(Subscription.id))
+            .filter(Subscription.active == True)
+            .group_by(Subscription.sign)
+            .all()
+        )
+        return active_users, stats
+    finally:
+        db.close()
 
 
 async def setup_handlers(bot, update: types.Update):
@@ -58,13 +196,22 @@ async def setup_handlers(bot, update: types.Update):
                 return
             data = cb.data
             if data.startswith('sign:'):
-                sign = data.split(':',1)[1]
+                sign = data.split(':', 1)[1]
+                if not _is_valid_sign(sign):
+                    await bot.answer_callback_query(cb.id, text="Некорректный знак")
+                    return
                 await handle_show_sign(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
             elif data.startswith('sub:'):
-                sign = data.split(':',1)[1]
+                sign = data.split(':', 1)[1]
+                if not _is_valid_sign(sign):
+                    await bot.answer_callback_query(cb.id, text="Некорректный знак")
+                    return
                 await handle_subscribe(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
             elif data.startswith('unsub:'):
-                sign = data.split(':',1)[1]
+                sign = data.split(':', 1)[1]
+                if sign != "all" and not _is_valid_sign(sign):
+                    await bot.answer_callback_query(cb.id, text="Некорректный знак")
+                    return
                 await handle_unsubscribe(bot, cb.message.chat.id, cb.from_user.id, sign, cb.message.message_id, cb.id)
             elif data.startswith('back:'):
                 ctx = data.split(':',1)[1]
@@ -79,20 +226,18 @@ async def setup_handlers(bot, update: types.Update):
         raise
 
 async def handle_start(bot, msg: types.Message):
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter_by(telegram_id=msg.from_user.id).first()
-        if not user:
-            user = User(telegram_id=msg.from_user.id, username=msg.from_user.username, first_name=msg.from_user.first_name, last_name=msg.from_user.last_name)
-            db.add(user)
-            db.commit()
-        text = (
-            "Привет! Я бот с гороскопами.\n"
-            "Выберите знак зодиака или используйте команды из меню."
-        )
-        await bot.send_message(msg.chat.id, text, reply_markup=signs_keyboard())
-    finally:
-        db.close()
+    await asyncio.to_thread(
+        _get_or_create_user,
+        msg.from_user.id,
+        msg.from_user.username,
+        msg.from_user.first_name,
+        msg.from_user.last_name,
+    )
+    text = (
+        "Привет! Я бот с гороскопами.\n"
+        "Выберите знак зодиака или используйте команды из меню."
+    )
+    await bot.send_message(msg.chat.id, text, reply_markup=signs_keyboard())
 
 async def handle_help(bot, msg: types.Message):
     text = (
@@ -108,132 +253,87 @@ async def handle_list(bot, msg: types.Message):
     await bot.send_message(msg.chat.id, "Выберите знак:", reply_markup=signs_keyboard())
 
 async def handle_me(bot, msg: types.Message):
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter_by(telegram_id=msg.from_user.id).first()
-        if not user:
-            await bot.send_message(msg.chat.id, "Вы не зарегистрированы. Отправьте /start")
-            return
-        subs = [s.sign for s in user.subscriptions if s.active]
-        text = f"Вы подписаны на: {', '.join([SIGN_TITLES.get(s,s) for s in subs]) if subs else 'ничего'}"
-        # build keyboard to unsubscribe
-        buttons = []
-        for s in subs:
-            buttons.append([types.InlineKeyboardButton(text=f"Отписаться {SIGN_TITLES.get(s,s)}", callback_data=f"unsub:{s}")])
-        if subs:
-            buttons.append([types.InlineKeyboardButton(text="Отписаться от всех", callback_data="unsub:all")])
-        kb = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-        await bot.send_message(msg.chat.id, text, reply_markup=kb)
-    finally:
-        db.close()
+    subs = await asyncio.to_thread(_get_user_subscriptions, msg.from_user.id)
+    if not subs:
+        await bot.send_message(msg.chat.id, "Вы не подписаны ни на один знак. Используйте /list")
+        return
+
+    text = f"Вы подписаны на: {', '.join([SIGN_TITLES.get(s, s) for s in subs])}"
+    buttons = [
+        [
+            types.InlineKeyboardButton(
+                text=f"Отписаться {SIGN_TITLES.get(sign, sign)}",
+                callback_data=f"unsub:{sign}",
+            )
+        ]
+        for sign in subs
+    ]
+    buttons.append([types.InlineKeyboardButton(text="Отписаться от всех", callback_data="unsub:all")])
+    kb = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    await bot.send_message(msg.chat.id, text, reply_markup=kb)
 
 async def handle_show_sign(bot, chat_id: int, user_id: int, sign: str, message_id: int, callback_id: str):
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter_by(telegram_id=user_id).first()
-        subscribed = False
-        if user:
-            sub = db.query(Subscription).filter_by(user_id=user.id, sign=sign, active=True).first()
-            subscribed = bool(sub)
-        text = await fetch_horoscope(sign)
-        await bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, reply_markup=sign_detail_keyboard(sign, subscribed=subscribed))
-    finally:
-        db.close()
+    subscribed = await asyncio.to_thread(_is_subscribed, user_id, sign)
+    text = await fetch_horoscope(sign)
+    await bot.edit_message_text(
+        text,
+        chat_id=chat_id,
+        message_id=message_id,
+        reply_markup=sign_detail_keyboard(sign, subscribed=subscribed),
+    )
 
 async def handle_subscribe(bot, chat_id: int, user_id: int, sign: str, message_id: int, callback_id: str):
-    db = SessionLocal()
+    was_updated = await asyncio.to_thread(_subscribe_user, user_id, sign)
+
     try:
-        user = db.query(User).filter_by(telegram_id=user_id).first()
-        if not user:
-            user = User(telegram_id=user_id)
-            db.add(user)
-            db.commit()
-            db.refresh(user)
+        await bot.answer_callback_query(callback_id, text=f"Вы подписаны на {SIGN_TITLES.get(sign, sign)}")
+    except Exception as e:
+        logger.warning(f"Could not answer callback query: {e}")
 
-        # Check if already subscribed
-        sub = db.query(Subscription).filter_by(user_id=user.id, sign=sign).first()
-        was_subscribed = sub and sub.active if sub else False
-
-        if not sub:
-            sub = Subscription(user_id=user.id, sign=sign, active=True)
-            db.add(sub)
-        else:
-            sub.active = True
-        db.commit()
-
-        # Try to answer callback query, but ignore if it's too old
+    if was_updated:
         try:
-            await bot.answer_callback_query(callback_id, text=f"Вы подписаны на {sign}")
+            await bot.edit_message_reply_markup(
+                chat_id=chat_id,
+                message_id=message_id,
+                reply_markup=sign_detail_keyboard(sign, subscribed=True),
+            )
         except Exception as e:
-            logger.warning(f"Could not answer callback query: {e}")
-
-        # Only update keyboard if subscription status actually changed
-        if not was_subscribed:
-            try:
-                await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=sign_detail_keyboard(sign, subscribed=True))
-            except Exception as e:
-                logger.warning(f"Could not edit message reply markup: {e}")
-    finally:
-        db.close()
+            logger.warning(f"Could not edit message reply markup: {e}")
 
 async def handle_unsubscribe(bot, chat_id: int, user_id: int, sign: str, message_id: int, callback_id: str):
-    db = SessionLocal()
+    unsubscribed = await asyncio.to_thread(_unsubscribe_user, user_id, sign)
+    if not unsubscribed:
+        try:
+            await bot.answer_callback_query(callback_id, text="Вы не были подписаны")
+        except Exception as e:
+            logger.warning(f"Could not answer callback query: {e}")
+        return
+
+    answer_text = "Отписались от всех" if sign == "all" else f"Отписались от {SIGN_TITLES.get(sign, sign)}"
     try:
-        user = db.query(User).filter_by(telegram_id=user_id).first()
-        if not user:
-            try:
-                await bot.answer_callback_query(callback_id, text="Вы не подписаны")
-            except Exception as e:
-                logger.warning(f"Could not answer callback query: {e}")
-            return
-        if sign == 'all':
-            db.query(Subscription).filter_by(user_id=user.id).update({'active': False})
-            db.commit()
-            try:
-                await bot.answer_callback_query(callback_id, text="Отписались от всех")
-            except Exception as e:
-                logger.warning(f"Could not answer callback query: {e}")
-            return
-        sub = db.query(Subscription).filter_by(user_id=user.id, sign=sign).first()
-        if sub and sub.active:
-            sub.active = False
-            db.commit()
-            try:
-                await bot.answer_callback_query(callback_id, text=f"Отписались от {sign}")
-            except Exception as e:
-                logger.warning(f"Could not answer callback query: {e}")
-            try:
-                await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=sign_detail_keyboard(sign, subscribed=False))
-            except Exception as e:
-                logger.warning(f"Could not edit message reply markup: {e}")
-        else:
-            try:
-                await bot.answer_callback_query(callback_id, text="Вы не были подписаны")
-            except Exception as e:
-                logger.warning(f"Could not answer callback query: {e}")
-    finally:
-        db.close()
+        await bot.answer_callback_query(callback_id, text=answer_text)
+    except Exception as e:
+        logger.warning(f"Could not answer callback query: {e}")
+
+    if sign != "all":
+        try:
+            await bot.edit_message_reply_markup(
+                chat_id=chat_id,
+                message_id=message_id,
+                reply_markup=sign_detail_keyboard(sign, subscribed=False),
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit message reply markup: {e}")
 
 async def handle_subscribers(bot, msg: types.Message):
-    db = SessionLocal()
-    try:
-        # Count unique users with active subscriptions
-        active_users = db.query(func.count(func.distinct(Subscription.user_id))).filter(Subscription.active==True).scalar() or 0
+    active_users, stats = await asyncio.to_thread(_get_subscribers_stats)
+    lines = [f"Активных пользователей: {active_users}"]
+    lines.append(f"Всего активных подписок: {sum(cnt for _, cnt in stats)}")
+    lines.append("")
+    for sign, cnt in sorted(stats, key=lambda item: item[1], reverse=True):
+        lines.append(f"{SIGN_TITLES.get(sign, sign.title())}: {cnt}")
 
-        # Count active subscriptions per sign
-        stats = db.query(Subscription.sign, func.count(Subscription.id)).filter(
-            Subscription.active==True
-        ).group_by(Subscription.sign).all()
-
-        lines = [f"Активных пользователей: {active_users}"]
-        lines.append(f"Всего активных подписок: {sum(cnt for _, cnt in stats)}")
-        lines.append("")
-        for sign, cnt in sorted(stats, key=lambda x: x[1], reverse=True):
-            lines.append(f"{sign.title()}: {cnt}")
-
-        await bot.send_message(msg.chat.id, "\n".join(lines))
-    finally:
-        db.close()
+    await bot.send_message(msg.chat.id, "\n".join(lines))
 
 async def handle_send_now(bot, msg: types.Message):
     # trigger send

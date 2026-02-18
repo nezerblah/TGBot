@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import logging
 import asyncio
 import re
+import html
 from ..db import SessionLocal
 from ..models import CachedHoroscope
 
@@ -40,6 +41,11 @@ def truncate_text(text: str, max_length: int = TELEGRAM_MESSAGE_LIMIT - RATINGS_
     return truncated
 
 
+def sanitize_for_telegram_html(text: str) -> str:
+    """Escape external text for safe HTML parse mode."""
+    return html.escape(text, quote=False)
+
+
 def extract_ratings(soup) -> dict:
     """Extract star ratings from horo.mail.ru using aria-label attribute"""
     ratings = {
@@ -71,10 +77,9 @@ def extract_ratings(soup) -> dict:
                     logger.info(f"aria-label: {aria_label}")
 
                     # Extract number from aria-label (e.g., "5 из 5" -> 5)
-                    import re
                     match = re.search(r'(\d+)\s*из\s*5', aria_label)
                     if match:
-                        star_count = int(match.group(1))
+                        star_count = max(0, min(int(match.group(1)), 5))
                         logger.info(f"Extracted from aria-label: {star_count} stars")
 
                         if 'финанс' in link_text:
@@ -89,6 +94,7 @@ def extract_ratings(soup) -> dict:
                     else:
                         # Fallback: count <li> elements which represent individual stars
                         li_count = len(next_elem.find_all('li'))
+                        li_count = max(0, min(li_count, 5))
                         logger.info(f"Fallback: counting li elements: {li_count}")
 
                         if li_count > 0:
@@ -214,6 +220,7 @@ async def fetch_horoscope(sign: str) -> str:
 
                 # Truncate text to fit Telegram limits
                 text = truncate_text(text)
+                text = sanitize_for_telegram_html(text)
 
                 # Extract ratings
                 ratings = extract_ratings(soup)

@@ -31,3 +31,10 @@ class CachedHoroscope(Base):
     content = Column(Text, nullable=False)
     fetched_at = Column(DateTime, default=datetime.datetime.utcnow)
     __table_args__ = (UniqueConstraint('sign', 'date', name='_sign_date_uc'),)
+
+
+class ProcessedUpdate(Base):
+    __tablename__ = "processed_updates"
+    id = Column(Integer, primary_key=True, index=True)
+    update_id = Column(BigInteger, unique=True, index=True, nullable=False)
+    processed_at = Column(DateTime, default=datetime.datetime.utcnow)

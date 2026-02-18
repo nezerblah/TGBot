@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 import logging
 from .webhook import router as webhook_router
-from .bot import bot, setup_bot_commands
+from .bot import initialize_bot, setup_bot_commands
 from .scheduler import setup_scheduler
 from .db import Base, engine
 import os
@@ -27,18 +27,23 @@ except Exception as e:
 # start scheduler once on startup
 @app.on_event("startup")
 async def startup_event():
+    bot_instance = initialize_bot()
+
+    webhook_secret = os.getenv("WEBHOOK_SECRET")
+    if not webhook_secret:
+        raise RuntimeError("WEBHOOK_SECRET environment variable is required.")
+
     logger.info("Starting scheduler...")
-    setup_scheduler(bot)
+    setup_scheduler(bot_instance)
     try:
         await setup_bot_commands()
     except Exception as e:
         logger.warning(f"Could not set bot commands: {e}")
 
     webhook_url = os.getenv("WEBHOOK_URL")
-    webhook_secret = os.getenv("WEBHOOK_SECRET")
     if webhook_url:
         try:
-            await bot.set_webhook(
+            await bot_instance.set_webhook(
                 url=webhook_url,
                 secret_token=webhook_secret,
                 drop_pending_updates=True,

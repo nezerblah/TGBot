@@ -1,174 +1,69 @@
-# Telegram Horoscopes Bot 🤖
+# Telegram Horoscopes Bot
 
-Telegram бот на FastAPI + aiogram, который парсит гороскопы с horo.mail.ru и отправляет их подписчикам в 11:00 по МСК.
+Telegram бот на FastAPI + aiogram (webhook-only), который парсит гороскопы с horo.mail.ru и рассылает подписчикам.
 
-**Архитектура:** WebHook (не polling), асинхронная обработка, APScheduler для расписания, SQLite база данных
+## Быстрый старт
 
-## 🚀 Быстрый старт
+1. Установите зависимости:
 
-### Локальная разработка
-
-1. **Установите зависимости:**
 ```bash
-python -m venv venv
-source venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2. **Создайте `.env` файл:**
-```bash
-cp .env.example .env
-# Заполните значения BOT_TOKEN, ADMIN_ID, WEBHOOK_SECRET
-```
-
-3. **Запустите приложение:**
-```bash
-uvicorn app.main:app --reload
-```
-
-Приложение будет доступно на `http://localhost:8000`
-БД автоматически создастся в `tg_bot.db`
-
-### 🚂 Деплой на Railway.com
-
-1. **Убедитесь, что все изменения сохранены:**
-```bash
-git status
-git add .
-git commit -m "Fix bot implementation with SQLite"
-git push origin main
-```
-
-2. **На railway.app:**
-   - Создайте новый проект
-   - Выберите GitHub репозиторий
-   - Railway автоматически обнаружит `Procfile` и развернёт приложение
-
-3. **Установите переменные окружения:**
-   - BOT_TOKEN: Токен вашего бота
-   - WEBHOOK_SECRET: Секретный ключ (используйте что-то сложное)
-   - ADMIN_ID: Ваш Telegram ID (для админ команд)
-
-4. **Настройте webhook:**
-   - Используйте скрипт `scripts/set_webhook.py`
-   - Или выполните HTTP запрос:
-   ```bash
-   curl -X POST \
-     https://api.telegram.org/bot{BOT_TOKEN}/setWebhook \
-     -H "Content-Type: application/json" \
-     -d '{
-       "url": "https://your-railway-app.up.railway.app/webhook",
-       "secret_token": "your-webhook-secret"
-     }'
-   ```# 5. bash scripts/setup_webhook.sh
-```
-
-## 📋 Структура проекта
-
-```
-app/
-├── bot.py           # aiogram бот и обработка апдейтов
-├── handlers.py      # обработчики команд и сообщений
-├── scheduler.py     # APScheduler для отправки гороскопов
-├── db.py            # SQLAlchemy конфигурация
-├── models.py        # модели БД (User, Subscription)
-├── keyboards.py     # Telegram клавиатуры
-├── webhook.py       # FastAPI эндпоинт для вебхука
-├── main.py          # FastAPI приложение
-└── horo/
-    └── parser.py    # парсер гороскопов с horo.mail.ru
-
-scripts/
-└── set_webhook.py   # скрипт регистрации вебхука
-
-requirements.txt     # зависимости проекта
-Procfile            # инструкции для Railway
-```
-
-## 🔧 Переменные окружения
-
-```env
-BOT_TOKEN              # от @BotFather в Telegram
-ADMIN_ID               # ваш Telegram ID
-DATABASE_URL           # PostgreSQL на Railway (автоматически)
-WEBHOOK_SECRET         # случайная строка для безопасности
-WEBHOOK_URL            # https://ваш-домен.up.railway.app/webhook/secret
-ENVIRONMENT            # production/development
-```
-
-## 📦 Зависимости
-
-- **FastAPI 0.95.2** - веб-фреймворк
-- **aiogram 3.0.0b7** - Telegram бот API
-- **SQLAlchemy 1.4.49** - ORM для БД
-- **APScheduler 3.10.1** - планировщик задач
-- **BeautifulSoup4 4.12.2** - парсинг HTML
-
-## 🧪 Тестирование
+2. Задайте переменные окружения:
 
 ```bash
-# Запуск тестов
-pytest
-
-# С покрытием
-pytest --cov=app
-
-# Конкретный тест
-pytest tests/test_parser.py
+export BOT_TOKEN="<telegram bot token>"
+export WEBHOOK_SECRET="<random secret>"
+export ADMIN_ID="<your telegram id>"
+export WEBHOOK_URL="https://your-domain/webhook"
 ```
 
-## 📖 Документация
-
-Полная документация по деплою на Railway находится в папке [`docs/`](./docs/README.md):
-
-- 📌 **[START_HERE.md](./docs/START_HERE.md)** - выберите ваш уровень
-- 📚 **[DEPLOYMENT_CHECKLIST.md](./docs/DEPLOYMENT_CHECKLIST.md)** - полный гайд
-- ⚡ **[DEPLOYMENT_CHEATSHEET.md](./docs/DEPLOYMENT_CHEATSHEET.md)** - краткий гайд
-- 🏗️ **[ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - архитектура приложения
-
-## 🔧 Управление на Railway
+3. Запустите приложение:
 
 ```bash
-# Просмотр логов
-railway logs
-
-# Переменные окружения
-railway variables
-
-# Установка вебхука
-bash scripts/setup_webhook.sh
-
-# Подготовка проекта к деплою
-bash scripts/deploy_prepare.sh
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-## 🆘 Решение проблем
+## Переменные окружения
 
-**Бот не отвечает:** Проверьте что вебхук зарегистрирован
+Обязательные:
+
+- `BOT_TOKEN`
+- `WEBHOOK_SECRET`
+
+Рекомендуемые:
+
+- `ADMIN_ID`
+- `WEBHOOK_URL`
+- `MAX_UPDATE_AGE_SECONDS` (по умолчанию `300`)
+- `DATA_DIR` (директория для SQLite-файла `tg_bot.db`)
+
+Настройка рассылки:
+
+- `SCHEDULER_ENABLED` (`true`/`false`, по умолчанию `false`)
+- `SCHEDULER_HOUR_MSK` (по умолчанию `11`)
+- `SCHEDULER_MINUTE_MSK` (по умолчанию `0`)
+
+## Архитектура
+
+- Webhook endpoint: `POST /webhook`
+- FastAPI приложение: `app/main.py`
+- Логика Telegram-обработчиков: `app/handlers.py`
+- Парсер гороскопа: `app/horo/parser.py`
+- База данных: SQLite через SQLAlchemy (`app/db.py`)
+- Планировщик: APScheduler (`app/scheduler.py`)
+
+## Тесты
+
 ```bash
-bash scripts/setup_webhook.sh
+pytest -q
 ```
 
-**Ошибки БД:** Проверьте `DATABASE_URL` в переменных окружения
+## Скрипт установки webhook
+
 ```bash
-railway variables | grep DATABASE_URL
+python scripts/set_webhook.py
 ```
-
-**Все не работает:** Смотрите полные гайды в папке [`docs/`](./docs/README.md)
-
-## 📚 Полезные ссылки
-
-- [Railway документация](https://docs.railway.app/)
-- [Telegram Bot API](https://core.telegram.org/bots)
-- [aiogram документация](https://docs.aiogram.dev/)
-- [FastAPI](https://fastapi.tiangolo.com/)
-- [SQLAlchemy](https://docs.sqlalchemy.org/)
-
-## 📝 Лицензия
-
-[MIT License](LICENSE)
-
----
-
-**Готовы к деплою?** → Откройте [`docs/START_HERE.md`](./docs/START_HERE.md) 🚀
-
