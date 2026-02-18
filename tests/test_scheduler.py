@@ -1,7 +1,8 @@
 """Tests for scheduler module."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.scheduler import _load_recipients_by_sign
 
