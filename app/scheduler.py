@@ -19,7 +19,7 @@ def _load_recipients_by_sign() -> dict[str, list[int]]:
         rows = (
             db.query(Subscription.sign, User.telegram_id)
             .join(User, User.id == Subscription.user_id)
-            .filter(Subscription.active == True)
+            .filter(Subscription.active)
             .all()
         )
         recipients: dict[str, list[int]] = {}

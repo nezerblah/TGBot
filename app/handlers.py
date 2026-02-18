@@ -153,14 +153,14 @@ def _get_subscribers_stats() -> tuple[int, list[tuple[str, int]]]:
     try:
         active_users = (
             db.query(func.count(func.distinct(Subscription.user_id)))
-            .filter(Subscription.active == True)
+            .filter(Subscription.active)
             .scalar()
             or 0
         )
 
         stats = (
             db.query(Subscription.sign, func.count(Subscription.id))
-            .filter(Subscription.active == True)
+            .filter(Subscription.active)
             .group_by(Subscription.sign)
             .all()
         )

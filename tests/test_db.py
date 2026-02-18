@@ -1,5 +1,3 @@
-import asyncio
-
 from app.db import Base, engine, SessionLocal
 from app import models
 
