@@ -1,4 +1,5 @@
 import os
+
 import httpx
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")

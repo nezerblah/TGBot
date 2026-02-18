@@ -1,5 +1,5 @@
-from app.db import Base, engine, SessionLocal
 from app import models
+from app.db import Base, SessionLocal, engine
 
 
 def test_create_db():

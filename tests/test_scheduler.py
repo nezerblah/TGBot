@@ -2,6 +2,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
 from app.scheduler import _load_recipients_by_sign
 
 

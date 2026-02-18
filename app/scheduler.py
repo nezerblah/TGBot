@@ -1,12 +1,14 @@
+import asyncio
+import logging
+import os
+from zoneinfo import ZoneInfo
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from zoneinfo import ZoneInfo
-import logging
-import asyncio
-import os
+
 from .db import SessionLocal
-from .models import Subscription, User
 from .horo.parser import fetch_horoscope
+from .models import Subscription, User
 
 logger = logging.getLogger(__name__)
 

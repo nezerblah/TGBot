@@ -1,11 +1,13 @@
-import httpx
-from bs4 import BeautifulSoup
+import asyncio
+import html
+import logging
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import logging
-import asyncio
-import re
-import html
+
+import httpx
+from bs4 import BeautifulSoup
+
 from ..db import SessionLocal
 from ..models import CachedHoroscope
 

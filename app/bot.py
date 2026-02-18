@@ -1,7 +1,9 @@
-import os
 import logging
+import os
+
 from aiogram import Bot, types
 from aiogram.types import BotCommand, DefaultBotProperties
+
 from .handlers import setup_handlers
 
 logger = logging.getLogger(__name__)

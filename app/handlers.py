@@ -1,14 +1,16 @@
-from aiogram import types
+import asyncio
 import logging
-from collections import OrderedDict
-from .keyboards import signs_keyboard, sign_detail_keyboard, SIGN_TITLES, ZODIAC_SIGNS
-from .db import SessionLocal
-from .models import User, Subscription
-from .horo.parser import fetch_horoscope
-from sqlalchemy import func
 import os
 import time
-import asyncio
+from collections import OrderedDict
+
+from aiogram import types
+from sqlalchemy import func
+
+from .db import SessionLocal
+from .horo.parser import fetch_horoscope
+from .keyboards import SIGN_TITLES, ZODIAC_SIGNS, sign_detail_keyboard, signs_keyboard
+from .models import Subscription, User
 
 logger = logging.getLogger(__name__)
 
