@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 
 import httpx
 from bs4 import BeautifulSoup
@@ -18,14 +19,15 @@ async def fetch_random_joke() -> str | None:
 
         soup = BeautifulSoup(response.text, "html.parser")
 
-        joke_container = soup.find("div", class_="joke")
-        if not joke_container:
-            joke_container = soup.find("article")
+        jokes = soup.find_all("div", class_="text")
+        if not jokes:
+            logger.warning("No joke elements found on page")
+            return None
 
-        if joke_container:
-            joke_text = joke_container.get_text(strip=True)
-            if joke_text:
-                return joke_text
+        joke_el = random.choice(jokes)
+        joke_text = joke_el.get_text(separator="\n", strip=True)
+        if joke_text:
+            return joke_text
 
         return None
     except asyncio.TimeoutError:
