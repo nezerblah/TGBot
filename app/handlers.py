@@ -251,9 +251,18 @@ async def handle_help(bot, msg: types.Message):
         "/start — начать работу\n"
         "/list — список знаков\n"
         "/me — мои подписки\n"
+        "/joke — случайный анекдот\n"
         "/help — помощь"
     )
     await bot.send_message(msg.chat.id, text)
+
+
+async def handle_joke(bot, msg: types.Message):
+    joke = await fetch_random_joke()
+    if joke:
+        await bot.send_message(msg.chat.id, f"😂 {joke}")
+    else:
+        await bot.send_message(msg.chat.id, "Не удалось загрузить анекдот 😢")
 
 
 async def handle_list(bot, msg: types.Message):
