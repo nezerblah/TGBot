@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+import re
 
 import httpx
 from bs4 import BeautifulSoup
@@ -25,7 +26,13 @@ async def fetch_random_joke() -> str | None:
             return None
 
         joke_el = random.choice(jokes)
-        joke_text = joke_el.get_text(separator="\n", strip=True)
+
+        for br in joke_el.find_all("br"):
+            br.replace_with("\n")
+
+        joke_text = joke_el.get_text(strip=True)
+        joke_text = re.sub(r"\n{3,}", "\n\n", joke_text)
+
         if joke_text:
             return joke_text
 
