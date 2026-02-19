@@ -8,6 +8,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from .db import SessionLocal
 from .horo.parser import fetch_horoscope
+from .joke_parser import fetch_random_joke
 from .models import Subscription, User
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,37 @@ async def send_daily(bot):
         logger.error(f"Error in send_daily: {e}", exc_info=True)
 
 
+async def send_daily_joke(bot):
+    """Send daily joke to all active subscribers"""
+    try:
+        logger.info("Starting daily joke distribution...")
+        db = SessionLocal()
+        try:
+            user_ids = db.query(User.telegram_id).join(Subscription).filter(Subscription.active).distinct().all()
+        finally:
+            db.close()
+
+        if not user_ids:
+            logger.info("No active users for joke distribution")
+            return
+
+        joke = await fetch_random_joke()
+        if not joke:
+            logger.warning("Failed to fetch joke for daily distribution")
+            return
+
+        message = f"😂 {joke}"
+        for (user_id,) in user_ids:
+            try:
+                await bot.send_message(user_id, message)
+            except Exception as e:
+                logger.error(f"Failed to send joke to user {user_id}: {e}")
+
+        logger.info(f"Daily joke sent to {len(user_ids)} users")
+    except Exception as e:
+        logger.error(f"Error in send_daily_joke: {e}", exc_info=True)
+
+
 def setup_scheduler(bot):
     """Setup and start APScheduler"""
     try:
@@ -89,7 +121,9 @@ def setup_scheduler(bot):
             coalesce=True,
         )
         sched.start()
-        logger.info(f"Scheduler started. Daily horoscope: {hour:02d}:{minute:02d} MSK, Daily joke: {joke_hour:02d}:{joke_minute:02d} MSK")
+        logger.info(
+            f"Scheduler started. Daily horoscope: {hour:02d}:{minute:02d} MSK, Daily joke: {joke_hour:02d}:{joke_minute:02d} MSK"
+        )
         return sched
     except Exception as e:
         logger.error(f"Failed to setup scheduler: {e}", exc_info=True)
