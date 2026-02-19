@@ -64,11 +64,12 @@ def setup_scheduler(bot):
             logger.info("Scheduler is disabled. Set SCHEDULER_ENABLED=true to enable daily distribution.")
             return None
 
-        hour = int(os.getenv("SCHEDULER_HOUR_MSK", "11"))
-        minute = int(os.getenv("SCHEDULER_MINUTE_MSK", "0"))
+        hour = int(os.getenv("SCHEDULER_HOUR_MSK", "13"))
+        minute = int(os.getenv("SCHEDULER_MINUTE_MSK", "13"))
+        joke_hour = int(os.getenv("JOKE_HOUR_MSK", "10"))
+        joke_minute = int(os.getenv("JOKE_MINUTE_MSK", "0"))
 
         sched = AsyncIOScheduler(timezone=MSK_ZONE)
-        # register coroutine job directly; pass bot as arg
         sched.add_job(
             send_daily,
             CronTrigger(hour=hour, minute=minute, timezone=MSK_ZONE),
@@ -78,8 +79,17 @@ def setup_scheduler(bot):
             max_instances=1,
             coalesce=True,
         )
+        sched.add_job(
+            send_daily_joke,
+            CronTrigger(hour=joke_hour, minute=joke_minute, timezone=MSK_ZONE),
+            args=[bot],
+            id="send_daily_joke",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
         sched.start()
-        logger.info(f"Scheduler started. Daily horoscope will be sent at {hour:02d}:{minute:02d} MSK")
+        logger.info(f"Scheduler started. Daily horoscope: {hour:02d}:{minute:02d} MSK, Daily joke: {joke_hour:02d}:{joke_minute:02d} MSK")
         return sched
     except Exception as e:
         logger.error(f"Failed to setup scheduler: {e}", exc_info=True)

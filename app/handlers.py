@@ -179,6 +179,8 @@ async def setup_handlers(bot, update: types.Update):
                     await handle_me(bot, msg)
                 elif msg.text.startswith("/help"):
                     await handle_help(bot, msg)
+                elif msg.text.startswith("/joke"):
+                    await handle_joke(bot, msg)
                 elif msg.text.startswith("/subscribers") and msg.from_user.id == ADMIN_ID:
                     await handle_subscribers(bot, msg)
                 elif msg.text.startswith("/send_now") and msg.from_user.id == ADMIN_ID:
