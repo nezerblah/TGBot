@@ -40,9 +40,8 @@ async def setup_bot_commands() -> None:
     bot_instance = get_bot()
     commands = [
         BotCommand(command="start", description="Начать работу"),
-        BotCommand(command="list", description="Список знаков"),
+        BotCommand(command="list", description="Список знаков зодиака"),
         BotCommand(command="me", description="Мои подписки"),
-        BotCommand(command="joke", description="Случайный анекдот"),
         BotCommand(command="tarot", description="🔮 Предсказание Таро"),
         BotCommand(command="help", description="Помощь"),
     ]

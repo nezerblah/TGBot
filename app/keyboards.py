@@ -63,17 +63,20 @@ def back_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data="back:list")]])
 
 
-def main_menu_keyboard(tarot_daily_subscribed: bool) -> ReplyKeyboardMarkup:
-    """Build main reply keyboard with tarot and daily subscription buttons."""
+def main_menu_keyboard(tarot_daily_subscribed: bool, is_premium: bool = False) -> ReplyKeyboardMarkup:
+    """Build main reply keyboard with tarot, spreads, daily subscription and premium buttons."""
     daily_label = (
         "🌙 Отписаться от ежедневного предсказания"
         if tarot_daily_subscribed
         else "🌙 Подписаться на ежедневное предсказание"
     )
+    premium_label = "⭐ Premium активен ✓" if is_premium else "⭐ Premium — безлимит"
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🔮 Получить предсказание")],
+            [KeyboardButton(text="🔮 Выбрать расклад")],
             [KeyboardButton(text=daily_label)],
+            [KeyboardButton(text=premium_label)],
         ],
         resize_keyboard=True,
     )
@@ -84,5 +87,15 @@ def tarot_open_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🃏 Открыть карту", callback_data="tarot:open")],
+        ]
+    )
+
+
+def spreads_keyboard() -> InlineKeyboardMarkup:
+    """Build inline keyboard with available tarot spreads."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🃏 Три карты (прошлое·настоящее·будущее)", callback_data="spread:three_cards")],
+            [InlineKeyboardButton(text="💕 Влюблённые (расклад на отношения)", callback_data="spread:lovers")],
         ]
     )

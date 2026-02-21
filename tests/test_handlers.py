@@ -73,8 +73,9 @@ def test_get_or_create_user_returns_existing_user(mock_session_class: MagicMock)
     mock_db.add.assert_not_called()
 
 
+@patch("app.handlers._is_premium", return_value=False)
 @patch("app.handlers.SessionLocal")
-def test_tarot_limit_first_call_returns_allowed(mock_session_class: MagicMock) -> None:
+def test_tarot_limit_first_call_returns_allowed(mock_session_class: MagicMock, mock_premium: MagicMock) -> None:
     """First tarot draw in a week should be allowed, 9 remaining."""
     mock_db = MagicMock()
     mock_session_class.return_value = mock_db
@@ -93,8 +94,11 @@ def test_tarot_limit_first_call_returns_allowed(mock_session_class: MagicMock) -
     assert remaining == 9
 
 
+@patch("app.handlers._is_premium", return_value=False)
 @patch("app.handlers.SessionLocal")
-def test_tarot_limit_tenth_call_returns_allowed_zero_remaining(mock_session_class: MagicMock) -> None:
+def test_tarot_limit_tenth_call_returns_allowed_zero_remaining(
+    mock_session_class: MagicMock, mock_premium: MagicMock
+) -> None:
     """10th tarot draw should be allowed with 0 remaining."""
     mock_db = MagicMock()
     mock_session_class.return_value = mock_db
@@ -113,8 +117,9 @@ def test_tarot_limit_tenth_call_returns_allowed_zero_remaining(mock_session_clas
     assert remaining == 0
 
 
+@patch("app.handlers._is_premium", return_value=False)
 @patch("app.handlers.SessionLocal")
-def test_tarot_limit_eleventh_call_denied(mock_session_class: MagicMock) -> None:
+def test_tarot_limit_eleventh_call_denied(mock_session_class: MagicMock, mock_premium: MagicMock) -> None:
     """11th tarot draw should be denied."""
     mock_db = MagicMock()
     mock_session_class.return_value = mock_db
@@ -133,8 +138,9 @@ def test_tarot_limit_eleventh_call_denied(mock_session_class: MagicMock) -> None
     assert remaining == 0
 
 
+@patch("app.handlers._is_premium", return_value=False)
 @patch("app.handlers.SessionLocal")
-def test_tarot_limit_resets_on_new_week(mock_session_class: MagicMock) -> None:
+def test_tarot_limit_resets_on_new_week(mock_session_class: MagicMock, mock_premium: MagicMock) -> None:
     """Counter should reset when a new week starts."""
     mock_db = MagicMock()
     mock_session_class.return_value = mock_db

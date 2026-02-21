@@ -8,6 +8,7 @@ from collections import OrderedDict
 from aiogram import types
 from sqlalchemy import func
 
+from .astro_parser import SPREADS, fetch_spread
 from .db import SessionLocal
 from .horo.parser import fetch_horoscope
 from .keyboards import (
@@ -16,9 +17,11 @@ from .keyboards import (
     main_menu_keyboard,
     sign_detail_keyboard,
     signs_keyboard,
+    spreads_keyboard,
     tarot_open_keyboard,
 )
 from .models import Subscription, User
+from .payments import _activate_premium, _is_premium, send_premium_invoice
 from .tarot import draw_random_card
 
 logger = logging.getLogger(__name__)
@@ -30,10 +33,14 @@ _CALLBACK_CACHE_MAX_SIZE = 5000
 _last_callback: OrderedDict[tuple[int, str], float] = OrderedDict()
 
 _VALID_SIGNS = frozenset(ZODIAC_SIGNS)
+_VALID_SPREADS = frozenset(SPREADS.keys())
 
 _TAROT_BUTTON_TEXT = "🔮 Получить предсказание"
+_SPREADS_BUTTON_TEXT = "🔮 Выбрать расклад"
 _TAROT_DAILY_SUBSCRIBE_TEXT = "🌙 Подписаться на ежедневное предсказание"
 _TAROT_DAILY_UNSUBSCRIBE_TEXT = "🌙 Отписаться от ежедневного предсказания"
+_PREMIUM_BUTTON_TEXT = "⭐ Premium — безлимит"
+_PREMIUM_ACTIVE_TEXT = "⭐ Premium активен ✓"
 
 _TAROT_INTRO = (
     "🔮 <b>Гадание на картах Таро</b>\n\n"
@@ -51,6 +58,18 @@ _TAROT_INTRO = (
     "верьте в лучшее и уверенно идите по жизненному пути.\n\n"
     "✨ Сфокусируйтесь на вашем вопросе, очистите разум и нажмите кнопку <b>«Открыть карту»</b>."
 )
+
+_SPREADS_INTRO = (
+    "🔮 <b>Расклады Таро</b>\n\n"
+    "Выберите один из доступных раскладов:\n\n"
+    "🃏 <b>Три карты</b> — расклад на прошлое, настоящее и будущее.\n"
+    "Поможет увидеть полную картину ситуации.\n\n"
+    "💕 <b>Влюблённые</b> — расклад на отношения.\n"
+    "Покажет, кто вы и ваш партнёр в союзе, и чего ожидать.\n\n"
+    "✨ Мысленно задайте вопрос и выберите расклад."
+)
+
+TELEGRAM_MESSAGE_LIMIT = 4096
 
 
 def _cleanup_callback_cache(now: float) -> None:
@@ -225,6 +244,9 @@ def _set_tarot_daily_subscription(telegram_id: int, subscribed: bool) -> bool:
 
 def _check_and_increment_tarot_limit(telegram_id: int) -> tuple[bool, int]:
     """Check weekly tarot limit and increment counter. Returns (allowed, remaining)."""
+    if _is_premium(telegram_id):
+        return True, 999
+
     db = SessionLocal()
     try:
         user = db.query(User).filter_by(telegram_id=telegram_id).first()
@@ -253,17 +275,43 @@ def _check_and_increment_tarot_limit(telegram_id: int) -> tuple[bool, int]:
         db.close()
 
 
+def _get_user_menu_state(telegram_id: int) -> tuple[bool, bool]:
+    """Return (tarot_daily_subscribed, is_premium) for menu rendering."""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(telegram_id=telegram_id).first()
+        if not user:
+            return False, False
+        daily = bool(user.tarot_daily_subscribed)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        premium = bool(user.premium_until and user.premium_until > now)
+        return daily, premium
+    finally:
+        db.close()
+
+
 async def setup_handlers(bot, update: types.Update):
     """Main dispatcher for handling messages and callbacks"""
     try:
         if update.message:
             msg = update.message
+            # Handle successful payment first
+            if msg.successful_payment:
+                await handle_successful_payment(bot, msg)
+                return
+
             logger.info(f"Message from {msg.from_user.id}: {msg.text}")
             if msg.text:
                 if msg.text == _TAROT_DAILY_SUBSCRIBE_TEXT:
                     await handle_tarot_daily_subscription(bot, msg, True)
                 elif msg.text == _TAROT_DAILY_UNSUBSCRIBE_TEXT:
                     await handle_tarot_daily_subscription(bot, msg, False)
+                elif msg.text == _PREMIUM_BUTTON_TEXT:
+                    await handle_premium_info(bot, msg)
+                elif msg.text == _PREMIUM_ACTIVE_TEXT:
+                    await handle_premium_info(bot, msg)
+                elif msg.text == _SPREADS_BUTTON_TEXT:
+                    await handle_spreads_menu(bot, msg)
                 elif msg.text.startswith("/start"):
                     await handle_start(bot, msg)
                 elif msg.text.startswith("/list"):
@@ -282,6 +330,8 @@ async def setup_handlers(bot, update: types.Update):
                     await handle_send_now(bot, msg)
                 else:
                     await bot.send_message(msg.chat.id, "Неизвестная команда. Используйте /list или /start")
+        elif update.pre_checkout_query:
+            await handle_pre_checkout(bot, update.pre_checkout_query)
         elif update.callback_query:
             cb = update.callback_query
             logger.info(f"Callback from {cb.from_user.id}: {cb.data}")
@@ -325,9 +375,17 @@ async def setup_handlers(bot, update: types.Update):
                         logger.warning(f"Could not answer callback query: {e}")
             elif data == "tarot:open":
                 await handle_tarot_open(bot, cb)
+            elif data.startswith("spread:"):
+                await handle_spread_result(bot, cb)
     except Exception as e:
         logger.error(f"Error in setup_handlers: {e}", exc_info=True)
         raise
+
+
+async def _send_menu(bot, chat_id: int, telegram_id: int) -> None:
+    """Helper to send the main menu keyboard with correct state."""
+    daily, premium = await asyncio.to_thread(_get_user_menu_state, telegram_id)
+    await bot.send_message(chat_id, "Меню:", reply_markup=main_menu_keyboard(daily, premium))
 
 
 async def handle_start(bot, msg: types.Message):
@@ -338,14 +396,14 @@ async def handle_start(bot, msg: types.Message):
         msg.from_user.first_name,
         msg.from_user.last_name,
     )
-    tarot_daily_subscribed = await asyncio.to_thread(_get_tarot_daily_subscription, msg.from_user.id)
+    daily, premium = await asyncio.to_thread(_get_user_menu_state, msg.from_user.id)
     text = "Привет! Я бот с гороскопами и раскладами Таро.\nВыберите знак зодиака или используйте команды из меню."
-    await bot.send_message(msg.chat.id, text, reply_markup=main_menu_keyboard(tarot_daily_subscribed))
+    await bot.send_message(msg.chat.id, text, reply_markup=main_menu_keyboard(daily, premium))
     await bot.send_message(msg.chat.id, "Выберите знак зодиака:", reply_markup=signs_keyboard())
 
 
 async def handle_help(bot, msg: types.Message):
-    tarot_daily_subscribed = await asyncio.to_thread(_get_tarot_daily_subscription, msg.from_user.id)
+    daily, premium = await asyncio.to_thread(_get_user_menu_state, msg.from_user.id)
     text = (
         "Доступные команды:\n"
         "/start — начать работу\n"
@@ -353,15 +411,16 @@ async def handle_help(bot, msg: types.Message):
         "/me — мои подписки\n"
         "/tarot — 🔮 предсказание Таро\n"
         "/help — помощь\n\n"
-        "🌙 Кнопка «Подписаться на ежедневное предсказание» — карта Таро каждое утро в 10:00 МСК"
+        "🔮 Кнопка «Выбрать расклад» — развёрнутые расклады Таро\n"
+        "🌙 Кнопка «Подписаться на ежедневное предсказание» — карта Таро каждое утро в 10:00 МСК\n"
+        "⭐ Premium — безлимитные предсказания за 99 руб/мес"
     )
-    await bot.send_message(msg.chat.id, text, reply_markup=main_menu_keyboard(tarot_daily_subscribed))
+    await bot.send_message(msg.chat.id, text, reply_markup=main_menu_keyboard(daily, premium))
 
 
 async def handle_list(bot, msg: types.Message):
-    tarot_daily_subscribed = await asyncio.to_thread(_get_tarot_daily_subscription, msg.from_user.id)
     await bot.send_message(msg.chat.id, "Выберите знак:", reply_markup=signs_keyboard())
-    await bot.send_message(msg.chat.id, "Меню:", reply_markup=main_menu_keyboard(tarot_daily_subscribed))
+    await _send_menu(bot, msg.chat.id, msg.from_user.id)
 
 
 async def handle_me(bot, msg: types.Message):
@@ -475,16 +534,17 @@ async def handle_tarot_open(bot, cb: types.CallbackQuery):
     if not allowed:
         await bot.send_message(
             cb.message.chat.id,
-            "⛔ Вы исчерпали лимит раскладов на эту неделю (10/10).\nЛимит обновится в понедельник.",
+            "⛔ Вы исчерпали лимит раскладов на эту неделю (10/10).\nЛимит обновится в понедельник.\n\n"
+            "⭐ Оформите Premium для безлимитных предсказаний!",
         )
         return
 
     card = draw_random_card()
+    limit_line = "" if remaining == 999 else f"\n\n📊 Осталось раскладов на этой неделе: {remaining}"
     caption = (
         f"🃏 <b>{card['name']}</b> ({card['name_en']})\n"
         f"Аркан: {card['number']}\n\n"
-        f"{card['meaning']}\n\n"
-        f"📊 Осталось раскладов на этой неделе: {remaining}"
+        f"{card['meaning']}{limit_line}"
     )
 
     try:
@@ -506,8 +566,119 @@ async def handle_tarot_open(bot, cb: types.CallbackQuery):
 async def handle_tarot_daily_subscription(bot, msg: types.Message, subscribed: bool):
     """Toggle daily tarot subscription for a user."""
     await asyncio.to_thread(_set_tarot_daily_subscription, msg.from_user.id, subscribed)
+    is_premium = await asyncio.to_thread(_is_premium, msg.from_user.id)
     if subscribed:
         label = "🌙 Вы подписались на ежедневное предсказание Таро. Карта будет приходить каждое утро в 10:00 МСК."
     else:
         label = "🌙 Вы отписались от ежедневного предсказания Таро."
-    await bot.send_message(msg.chat.id, label, reply_markup=main_menu_keyboard(subscribed))
+    await bot.send_message(msg.chat.id, label, reply_markup=main_menu_keyboard(subscribed, is_premium))
+
+
+async def handle_premium_info(bot, msg: types.Message):
+    """Show premium status or send invoice."""
+    is_premium = await asyncio.to_thread(_is_premium, msg.from_user.id)
+    if is_premium:
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter_by(telegram_id=msg.from_user.id).first()
+            until = user.premium_until.strftime("%d.%m.%Y") if user and user.premium_until else "—"
+        finally:
+            db.close()
+        await bot.send_message(
+            msg.chat.id,
+            f"⭐ <b>Premium активен</b>\n\nБезлимитные предсказания до: <b>{until}</b>",
+            parse_mode="HTML",
+        )
+    else:
+        text = (
+            "⭐ <b>Premium подписка</b>\n\n"
+            "🔓 Безлимитные предсказания Таро\n"
+            "🔓 Все расклады без ограничений\n"
+            "💰 Стоимость: 50 ⭐ Telegram Stars (~99 руб)\n"
+            "📅 Срок: 30 дней\n\n"
+            "Нажмите кнопку оплаты ниже:"
+        )
+        await bot.send_message(msg.chat.id, text, parse_mode="HTML")
+        await send_premium_invoice(bot, msg.chat.id)
+
+
+async def handle_pre_checkout(bot, query: types.PreCheckoutQuery):
+    """Answer pre-checkout query — always approve."""
+    try:
+        await bot.answer_pre_checkout_query(query.id, ok=True)
+    except Exception as e:
+        logger.error(f"Failed to answer pre-checkout query: {e}")
+
+
+async def handle_successful_payment(bot, msg: types.Message):
+    """Handle successful Telegram Stars payment."""
+    logger.info(f"Successful payment from {msg.from_user.id}: {msg.successful_payment.total_amount} XTR")
+    expiry = await asyncio.to_thread(_activate_premium, msg.from_user.id)
+    until = expiry.strftime("%d.%m.%Y")
+    daily, _ = await asyncio.to_thread(_get_user_menu_state, msg.from_user.id)
+    await bot.send_message(
+        msg.chat.id,
+        f"✅ <b>Premium активирован!</b>\n\n"
+        f"Безлимитные предсказания Таро до: <b>{until}</b>\n"
+        f"Спасибо за поддержку! 🙏",
+        parse_mode="HTML",
+        reply_markup=main_menu_keyboard(daily, True),
+    )
+
+
+async def handle_spreads_menu(bot, msg: types.Message):
+    """Show available tarot spreads menu."""
+    await bot.send_message(msg.chat.id, _SPREADS_INTRO, reply_markup=spreads_keyboard(), parse_mode="HTML")
+
+
+async def handle_spread_result(bot, cb: types.CallbackQuery):
+    """Fetch and send a tarot spread result."""
+    spread_key = cb.data.split(":", 1)[1]
+    if spread_key not in _VALID_SPREADS:
+        try:
+            await bot.answer_callback_query(cb.id, text="Неизвестный расклад")
+        except Exception:
+            pass
+        return
+
+    try:
+        await bot.answer_callback_query(cb.id, text="🃏 Тяну карты...")
+    except Exception as e:
+        logger.warning(f"Could not answer spread callback: {e}")
+
+    allowed, remaining = await asyncio.to_thread(_check_and_increment_tarot_limit, cb.from_user.id)
+    if not allowed:
+        await bot.send_message(
+            cb.message.chat.id,
+            "⛔ Вы исчерпали лимит раскладов на эту неделю (10/10).\nЛимит обновится в понедельник.\n\n"
+            "⭐ Оформите Premium для безлимитных предсказаний!",
+        )
+        return
+
+    spread = SPREADS[spread_key]
+    result = await fetch_spread(spread_key)
+
+    if not result:
+        await bot.send_message(
+            cb.message.chat.id,
+            "😔 Не удалось получить расклад, попробуйте позже.",
+        )
+        return
+
+    limit_line = "" if remaining == 999 else f"\n\n📊 Осталось раскладов на этой неделе: {remaining}"
+    text = f"{spread['title']}\n{spread['description']}\n\n{result}{limit_line}"
+
+    # Truncate if exceeds Telegram limit
+    if len(text) > TELEGRAM_MESSAGE_LIMIT:
+        text = text[: TELEGRAM_MESSAGE_LIMIT - 3] + "..."
+
+    await bot.send_message(cb.message.chat.id, text)
+
+    try:
+        await bot.edit_message_reply_markup(
+            chat_id=cb.message.chat.id,
+            message_id=cb.message.message_id,
+            reply_markup=None,
+        )
+    except Exception as e:
+        logger.warning(f"Could not remove spread keyboard: {e}")

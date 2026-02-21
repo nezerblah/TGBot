@@ -27,6 +27,7 @@ class User(Base):
     tarot_weekly_count = Column(Integer, default=0, nullable=False)
     tarot_week_start = Column(Date, nullable=True)
     tarot_daily_subscribed = Column(Boolean, default=False, nullable=False)
+    premium_until = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
     subscriptions = relationship("Subscription", back_populates="user")
 

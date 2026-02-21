@@ -35,6 +35,7 @@ def test_user_model_creates_with_defaults(db_session) -> None:
     assert user.tarot_daily_subscribed is False
     assert user.tarot_weekly_count == 0
     assert user.tarot_week_start is None
+    assert user.premium_until is None
 
 
 def test_subscription_unique_constraint(db_session) -> None:

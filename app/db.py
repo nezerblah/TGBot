@@ -36,6 +36,8 @@ def ensure_schema() -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN tarot_week_start DATE"))
         if "tarot_daily_subscribed" not in columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN tarot_daily_subscribed BOOLEAN NOT NULL DEFAULT 0"))
+        if "premium_until" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN premium_until DATETIME"))
 
 
 def get_db():
