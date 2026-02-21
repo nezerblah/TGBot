@@ -30,8 +30,12 @@ def ensure_schema() -> None:
         if not rows:
             return
         columns = {row[1] for row in rows}
-        if "joke_subscribed" not in columns:
-            conn.execute(text("ALTER TABLE users ADD COLUMN joke_subscribed BOOLEAN NOT NULL DEFAULT 0"))
+        if "tarot_weekly_count" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN tarot_weekly_count INTEGER NOT NULL DEFAULT 0"))
+        if "tarot_week_start" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN tarot_week_start DATE"))
+        if "tarot_daily_subscribed" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN tarot_daily_subscribed BOOLEAN NOT NULL DEFAULT 0"))
 
 
 def get_db():

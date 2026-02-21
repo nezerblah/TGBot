@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 import os
 import time
@@ -9,11 +10,10 @@ from sqlalchemy import func
 
 from .db import SessionLocal
 from .horo.parser import fetch_horoscope
-from .joke_parser import fetch_random_joke
 from .keyboards import (
     SIGN_TITLES,
     ZODIAC_SIGNS,
-    joke_subscription_keyboard,
+    main_menu_keyboard,
     sign_detail_keyboard,
     signs_keyboard,
     tarot_open_keyboard,
@@ -31,9 +31,9 @@ _last_callback: OrderedDict[tuple[int, str], float] = OrderedDict()
 
 _VALID_SIGNS = frozenset(ZODIAC_SIGNS)
 
-_JOKE_SUBSCRIBE_TEXT = "Подписаться на шутки"
-_JOKE_UNSUBSCRIBE_TEXT = "Отписаться от шуток"
 _TAROT_BUTTON_TEXT = "🔮 Получить предсказание"
+_TAROT_DAILY_SUBSCRIBE_TEXT = "🌙 Подписаться на ежедневный расклад"
+_TAROT_DAILY_UNSUBSCRIBE_TEXT = "🌙 Отписаться от ежедневного расклада"
 
 _TAROT_INTRO = (
     "🔮 <b>Гадание на картах Таро</b>\n\n"
@@ -42,7 +42,7 @@ _TAROT_INTRO = (
     "• «Как лучше провести сегодняшний день?»\n"
     "• «Карта дня на сегодня»\n"
     "• «К чему приведут мои действия?»\n\n"
-    "В этом гадании используется вся колода Старших Арканов, но без перевёрнутых карт. "
+    "В этом гадании используется полная колода Таро из 78 карт, но без перевёрнутых карт. "
     "По правилам гаданий задавать определённый вопрос можно только один раз, "
     "иначе следующие ответы будут неточными. Вместо этого лучше задавать уточняющие вопросы, "
     "чтобы лучше понять ситуацию.\n\n"
@@ -194,31 +194,61 @@ def _get_subscribers_stats() -> tuple[int, list[tuple[str, int]]]:
         db.close()
 
 
-def _get_joke_subscription(telegram_id: int) -> bool:
+def _get_tarot_daily_subscription(telegram_id: int) -> bool:
     db = SessionLocal()
     try:
         user = db.query(User).filter_by(telegram_id=telegram_id).first()
-        return bool(user and user.joke_subscribed)
+        return bool(user and user.tarot_daily_subscribed)
     finally:
         db.close()
 
 
-def _set_joke_subscription(telegram_id: int, subscribed: bool) -> bool:
+def _set_tarot_daily_subscription(telegram_id: int, subscribed: bool) -> bool:
     db = SessionLocal()
     try:
         user = db.query(User).filter_by(telegram_id=telegram_id).first()
         if not user:
-            user = User(telegram_id=telegram_id, joke_subscribed=subscribed)
+            user = User(telegram_id=telegram_id, tarot_daily_subscribed=subscribed)
             db.add(user)
             db.commit()
             return subscribed
 
-        if user.joke_subscribed == subscribed:
+        if user.tarot_daily_subscribed == subscribed:
             return subscribed
 
-        user.joke_subscribed = subscribed
+        user.tarot_daily_subscribed = subscribed
         db.commit()
         return subscribed
+    finally:
+        db.close()
+
+
+def _check_and_increment_tarot_limit(telegram_id: int) -> tuple[bool, int]:
+    """Check weekly tarot limit and increment counter. Returns (allowed, remaining)."""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(telegram_id=telegram_id).first()
+        if not user:
+            user = User(telegram_id=telegram_id)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+        today = datetime.date.today()
+        current_week_start = today - datetime.timedelta(days=today.weekday())
+
+        if user.tarot_week_start != current_week_start:
+            user.tarot_weekly_count = 0
+            user.tarot_week_start = current_week_start
+
+        if user.tarot_weekly_count >= 10:
+            db.commit()
+            return False, 0
+
+        user.tarot_weekly_count += 1
+        db.commit()
+        remaining = 10 - user.tarot_weekly_count
+        return True, remaining
     finally:
         db.close()
 
@@ -230,10 +260,10 @@ async def setup_handlers(bot, update: types.Update):
             msg = update.message
             logger.info(f"Message from {msg.from_user.id}: {msg.text}")
             if msg.text:
-                if msg.text == _JOKE_SUBSCRIBE_TEXT:
-                    await handle_joke_subscription(bot, msg, True)
-                elif msg.text == _JOKE_UNSUBSCRIBE_TEXT:
-                    await handle_joke_subscription(bot, msg, False)
+                if msg.text == _TAROT_DAILY_SUBSCRIBE_TEXT:
+                    await handle_tarot_daily_subscription(bot, msg, True)
+                elif msg.text == _TAROT_DAILY_UNSUBSCRIBE_TEXT:
+                    await handle_tarot_daily_subscription(bot, msg, False)
                 elif msg.text.startswith("/start"):
                     await handle_start(bot, msg)
                 elif msg.text.startswith("/list"):
@@ -242,8 +272,6 @@ async def setup_handlers(bot, update: types.Update):
                     await handle_me(bot, msg)
                 elif msg.text.startswith("/help"):
                     await handle_help(bot, msg)
-                elif msg.text.startswith("/joke"):
-                    await handle_joke(bot, msg)
                 elif msg.text.startswith("/tarot"):
                     await handle_tarot_intro(bot, msg)
                 elif msg.text == _TAROT_BUTTON_TEXT:
@@ -310,43 +338,30 @@ async def handle_start(bot, msg: types.Message):
         msg.from_user.first_name,
         msg.from_user.last_name,
     )
-    subscribed = await asyncio.to_thread(_get_joke_subscription, msg.from_user.id)
-    text = "Привет! Я бот с гороскопами.\nВыберите знак зодиака или используйте команды из меню."
-    await bot.send_message(msg.chat.id, text, reply_markup=joke_subscription_keyboard(subscribed))
+    tarot_daily_subscribed = await asyncio.to_thread(_get_tarot_daily_subscription, msg.from_user.id)
+    text = "Привет! Я бот с гороскопами и раскладами Таро.\nВыберите знак зодиака или используйте команды из меню."
+    await bot.send_message(msg.chat.id, text, reply_markup=main_menu_keyboard(tarot_daily_subscribed))
     await bot.send_message(msg.chat.id, "Выберите знак зодиака:", reply_markup=signs_keyboard())
 
 
 async def handle_help(bot, msg: types.Message):
-    subscribed = await asyncio.to_thread(_get_joke_subscription, msg.from_user.id)
+    tarot_daily_subscribed = await asyncio.to_thread(_get_tarot_daily_subscription, msg.from_user.id)
     text = (
         "Доступные команды:\n"
         "/start — начать работу\n"
         "/list — список знаков\n"
         "/me — мои подписки\n"
-        "/joke — случайный анекдот\n"
         "/tarot — 🔮 предсказание Таро\n"
-        "/help — помощь"
+        "/help — помощь\n\n"
+        "🌙 Кнопка «Подписаться на ежедневный расклад» — карта Таро каждое утро в 10:00 МСК"
     )
-    await bot.send_message(msg.chat.id, text, reply_markup=joke_subscription_keyboard(subscribed))
-
-
-async def handle_joke(bot, msg: types.Message):
-    subscribed = await asyncio.to_thread(_get_joke_subscription, msg.from_user.id)
-    joke = await fetch_random_joke()
-    if joke:
-        await bot.send_message(msg.chat.id, f"😂 {joke}", reply_markup=joke_subscription_keyboard(subscribed))
-    else:
-        await bot.send_message(
-            msg.chat.id,
-            "Не удалось загрузить анекдот 😢",
-            reply_markup=joke_subscription_keyboard(subscribed),
-        )
+    await bot.send_message(msg.chat.id, text, reply_markup=main_menu_keyboard(tarot_daily_subscribed))
 
 
 async def handle_list(bot, msg: types.Message):
-    subscribed = await asyncio.to_thread(_get_joke_subscription, msg.from_user.id)
+    tarot_daily_subscribed = await asyncio.to_thread(_get_tarot_daily_subscription, msg.from_user.id)
     await bot.send_message(msg.chat.id, "Выберите знак:", reply_markup=signs_keyboard())
-    await bot.send_message(msg.chat.id, "Меню шуток:", reply_markup=joke_subscription_keyboard(subscribed))
+    await bot.send_message(msg.chat.id, "Меню:", reply_markup=main_menu_keyboard(tarot_daily_subscribed))
 
 
 async def handle_me(bot, msg: types.Message):
@@ -438,17 +453,10 @@ async def handle_subscribers(bot, msg: types.Message):
 
 
 async def handle_send_now(bot, msg: types.Message):
-    # trigger send
     from .scheduler import send_daily
 
     await send_daily(bot)
     await bot.send_message(msg.chat.id, "Рассылка отправлена")
-
-
-async def handle_joke_subscription(bot, msg: types.Message, subscribed: bool):
-    await asyncio.to_thread(_set_joke_subscription, msg.from_user.id, subscribed)
-    label = "Вы подписались на ежедневные шутки" if subscribed else "Вы отписались от ежедневных шуток"
-    await bot.send_message(msg.chat.id, label, reply_markup=joke_subscription_keyboard(subscribed))
 
 
 async def handle_tarot_intro(bot, msg: types.Message):
@@ -463,8 +471,21 @@ async def handle_tarot_open(bot, cb: types.CallbackQuery):
     except Exception as e:
         logger.warning(f"Could not answer tarot callback: {e}")
 
+    allowed, remaining = await asyncio.to_thread(_check_and_increment_tarot_limit, cb.from_user.id)
+    if not allowed:
+        await bot.send_message(
+            cb.message.chat.id,
+            "⛔ Вы исчерпали лимит раскладов на эту неделю (10/10).\nЛимит обновится в понедельник.",
+        )
+        return
+
     card = draw_random_card()
-    caption = f"🃏 <b>{card['name']}</b> ({card['name_en']})\nАркан: {card['number']}\n\n{card['meaning']}"
+    caption = (
+        f"🃏 <b>{card['name']}</b> ({card['name_en']})\n"
+        f"Аркан: {card['number']}\n\n"
+        f"{card['meaning']}\n\n"
+        f"📊 Осталось раскладов на этой неделе: {remaining}"
+    )
 
     try:
         await bot.send_photo(cb.message.chat.id, photo=card["image"], caption=caption, parse_mode="HTML")
@@ -480,3 +501,13 @@ async def handle_tarot_open(bot, cb: types.CallbackQuery):
         )
     except Exception as e:
         logger.warning(f"Could not remove tarot keyboard: {e}")
+
+
+async def handle_tarot_daily_subscription(bot, msg: types.Message, subscribed: bool):
+    """Toggle daily tarot subscription for a user."""
+    await asyncio.to_thread(_set_tarot_daily_subscription, msg.from_user.id, subscribed)
+    if subscribed:
+        label = "🌙 Вы подписались на ежедневный расклад Таро. Карта будет приходить каждое утро в 10:00 МСК."
+    else:
+        label = "🌙 Вы отписались от ежедневного расклада Таро."
+    await bot.send_message(msg.chat.id, label, reply_markup=main_menu_keyboard(subscribed))

@@ -63,12 +63,17 @@ def back_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data="back:list")]])
 
 
-def joke_subscription_keyboard(subscribed: bool) -> ReplyKeyboardMarkup:
-    label = "Отписаться от шуток" if subscribed else "Подписаться на шутки"
+def main_menu_keyboard(tarot_daily_subscribed: bool) -> ReplyKeyboardMarkup:
+    """Build main reply keyboard with tarot and daily subscription buttons."""
+    daily_label = (
+        "🌙 Отписаться от ежедневного расклада"
+        if tarot_daily_subscribed
+        else "🌙 Подписаться на ежедневный расклад"
+    )
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=label)],
             [KeyboardButton(text="🔮 Получить предсказание")],
+            [KeyboardButton(text=daily_label)],
         ],
         resize_keyboard=True,
     )
