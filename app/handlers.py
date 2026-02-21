@@ -244,6 +244,10 @@ async def setup_handlers(bot, update: types.Update):
                     await handle_help(bot, msg)
                 elif msg.text.startswith("/joke"):
                     await handle_joke(bot, msg)
+                elif msg.text.startswith("/tarot"):
+                    await handle_tarot_intro(bot, msg)
+                elif msg.text == _TAROT_BUTTON_TEXT:
+                    await handle_tarot_intro(bot, msg)
                 elif msg.text.startswith("/subscribers") and msg.from_user.id == ADMIN_ID:
                     await handle_subscribers(bot, msg)
                 elif msg.text.startswith("/send_now") and msg.from_user.id == ADMIN_ID:
@@ -291,6 +295,8 @@ async def setup_handlers(bot, update: types.Update):
                         await bot.answer_callback_query(cb.id)
                     except Exception as e:
                         logger.warning(f"Could not answer callback query: {e}")
+            elif data == "tarot:open":
+                await handle_tarot_open(bot, cb)
     except Exception as e:
         logger.error(f"Error in setup_handlers: {e}", exc_info=True)
         raise
