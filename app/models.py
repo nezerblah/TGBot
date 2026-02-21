@@ -1,17 +1,7 @@
 import datetime
 
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    Column,
-    Date,
-    DateTime,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-)
+from sqlalchemy import (BigInteger, Boolean, Column, Date, DateTime,
+                        ForeignKey, Integer, String, Text, UniqueConstraint)
 from sqlalchemy.orm import relationship
 
 from .db import Base
@@ -24,6 +14,7 @@ class User(Base):
     username = Column(String, nullable=True)
     first_name = Column(String, nullable=True)
     last_name = Column(String, nullable=True)
+    joke_subscribed = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
     subscriptions = relationship("Subscription", back_populates="user")
 

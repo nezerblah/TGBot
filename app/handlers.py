@@ -9,7 +9,9 @@ from sqlalchemy import func
 
 from .db import SessionLocal
 from .horo.parser import fetch_horoscope
-from .keyboards import SIGN_TITLES, ZODIAC_SIGNS, sign_detail_keyboard, signs_keyboard
+from .joke_parser import fetch_random_joke
+from .keyboards import (SIGN_TITLES, ZODIAC_SIGNS, joke_subscription_keyboard,
+                        sign_detail_keyboard, signs_keyboard)
 from .models import Subscription, User
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,9 @@ _CALLBACK_CACHE_MAX_SIZE = 5000
 _last_callback: OrderedDict[tuple[int, str], float] = OrderedDict()
 
 _VALID_SIGNS = frozenset(ZODIAC_SIGNS)
+
+_JOKE_SUBSCRIBE_TEXT = "Подписаться на шутки"
+_JOKE_UNSUBSCRIBE_TEXT = "Отписаться от шуток"
 
 
 def _cleanup_callback_cache(now: float) -> None:
@@ -164,6 +169,35 @@ def _get_subscribers_stats() -> tuple[int, list[tuple[str, int]]]:
         db.close()
 
 
+def _get_joke_subscription(telegram_id: int) -> bool:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(telegram_id=telegram_id).first()
+        return bool(user and user.joke_subscribed)
+    finally:
+        db.close()
+
+
+def _set_joke_subscription(telegram_id: int, subscribed: bool) -> bool:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(telegram_id=telegram_id).first()
+        if not user:
+            user = User(telegram_id=telegram_id, joke_subscribed=subscribed)
+            db.add(user)
+            db.commit()
+            return subscribed
+
+        if user.joke_subscribed == subscribed:
+            return subscribed
+
+        user.joke_subscribed = subscribed
+        db.commit()
+        return subscribed
+    finally:
+        db.close()
+
+
 async def setup_handlers(bot, update: types.Update):
     """Main dispatcher for handling messages and callbacks"""
     try:
@@ -171,7 +205,11 @@ async def setup_handlers(bot, update: types.Update):
             msg = update.message
             logger.info(f"Message from {msg.from_user.id}: {msg.text}")
             if msg.text:
-                if msg.text.startswith("/start"):
+                if msg.text == _JOKE_SUBSCRIBE_TEXT:
+                    await handle_joke_subscription(bot, msg, True)
+                elif msg.text == _JOKE_UNSUBSCRIBE_TEXT:
+                    await handle_joke_subscription(bot, msg, False)
+                elif msg.text.startswith("/start"):
                     await handle_start(bot, msg)
                 elif msg.text.startswith("/list"):
                     await handle_list(bot, msg)
@@ -179,6 +217,8 @@ async def setup_handlers(bot, update: types.Update):
                     await handle_me(bot, msg)
                 elif msg.text.startswith("/help"):
                     await handle_help(bot, msg)
+                elif msg.text.startswith("/joke"):
+                    await handle_joke(bot, msg)
                 elif msg.text.startswith("/subscribers") and msg.from_user.id == ADMIN_ID:
                     await handle_subscribers(bot, msg)
                 elif msg.text.startswith("/send_now") and msg.from_user.id == ADMIN_ID:
@@ -239,23 +279,42 @@ async def handle_start(bot, msg: types.Message):
         msg.from_user.first_name,
         msg.from_user.last_name,
     )
+    subscribed = await asyncio.to_thread(_get_joke_subscription, msg.from_user.id)
     text = "Привет! Я бот с гороскопами.\nВыберите знак зодиака или используйте команды из меню."
-    await bot.send_message(msg.chat.id, text, reply_markup=signs_keyboard())
+    await bot.send_message(msg.chat.id, text, reply_markup=joke_subscription_keyboard(subscribed))
+    await bot.send_message(msg.chat.id, "Выберите знак зодиака:", reply_markup=signs_keyboard())
 
 
 async def handle_help(bot, msg: types.Message):
+    subscribed = await asyncio.to_thread(_get_joke_subscription, msg.from_user.id)
     text = (
         "Доступные команды:\n"
         "/start — начать работу\n"
         "/list — список знаков\n"
         "/me — мои подписки\n"
+        "/joke — случайный анекдот\n"
         "/help — помощь"
     )
-    await bot.send_message(msg.chat.id, text)
+    await bot.send_message(msg.chat.id, text, reply_markup=joke_subscription_keyboard(subscribed))
+
+
+async def handle_joke(bot, msg: types.Message):
+    subscribed = await asyncio.to_thread(_get_joke_subscription, msg.from_user.id)
+    joke = await fetch_random_joke()
+    if joke:
+        await bot.send_message(msg.chat.id, f"😂 {joke}", reply_markup=joke_subscription_keyboard(subscribed))
+    else:
+        await bot.send_message(
+            msg.chat.id,
+            "Не удалось загрузить анекдот 😢",
+            reply_markup=joke_subscription_keyboard(subscribed),
+        )
 
 
 async def handle_list(bot, msg: types.Message):
+    subscribed = await asyncio.to_thread(_get_joke_subscription, msg.from_user.id)
     await bot.send_message(msg.chat.id, "Выберите знак:", reply_markup=signs_keyboard())
+    await bot.send_message(msg.chat.id, "Меню шуток:", reply_markup=joke_subscription_keyboard(subscribed))
 
 
 async def handle_me(bot, msg: types.Message):
@@ -352,3 +411,9 @@ async def handle_send_now(bot, msg: types.Message):
 
     await send_daily(bot)
     await bot.send_message(msg.chat.id, "Рассылка отправлена")
+
+
+async def handle_joke_subscription(bot, msg: types.Message, subscribed: bool):
+    await asyncio.to_thread(_set_joke_subscription, msg.from_user.id, subscribed)
+    label = "Вы подписались на ежедневные шутки" if subscribed else "Вы отписались от ежедневных шуток"
+    await bot.send_message(msg.chat.id, label, reply_markup=joke_subscription_keyboard(subscribed))

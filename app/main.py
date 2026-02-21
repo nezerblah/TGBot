@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from slowapi.errors import RateLimitExceeded
 
 from .bot import initialize_bot, setup_bot_commands
-from .db import Base, engine
+from .db import Base, engine, ensure_schema
 from .rate_limit import limiter, rate_limit_handler
 from .scheduler import setup_scheduler
 from .webhook import router as webhook_router
@@ -22,6 +22,7 @@ app.include_router(webhook_router)
 # create tables if not exist (simple approach)
 try:
     logger.info("Creating database tables...")
+    ensure_schema()
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created successfully")
 except Exception as e:

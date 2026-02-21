@@ -32,6 +32,7 @@ def test_user_model_creates_with_defaults(db_session) -> None:
     assert user.username == "testuser"
     assert user.created_at is not None
     assert isinstance(user.created_at, datetime)
+    assert user.joke_subscribed is False
 
 
 def test_subscription_unique_constraint(db_session) -> None:
