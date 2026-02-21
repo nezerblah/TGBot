@@ -3,13 +3,22 @@
 import logging
 import random
 import re
+from typing import TypedDict
 
 import httpx
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-SPREADS = {
+
+class SpreadInfo(TypedDict):
+    url: str
+    title: str
+    description: str
+    num_cards: int
+
+
+SPREADS: dict[str, SpreadInfo] = {
     "three_cards": {
         "url": "https://www.astrocentr.ru/index.php?przd=taro&str=3cards",
         "title": "🃏 Расклад «Три карты»",
