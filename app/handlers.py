@@ -10,8 +10,13 @@ from sqlalchemy import func
 from .db import SessionLocal
 from .horo.parser import fetch_horoscope
 from .joke_parser import fetch_random_joke
-from .keyboards import (SIGN_TITLES, ZODIAC_SIGNS, joke_subscription_keyboard,
-                        sign_detail_keyboard, signs_keyboard)
+from .keyboards import (
+    SIGN_TITLES,
+    ZODIAC_SIGNS,
+    joke_subscription_keyboard,
+    sign_detail_keyboard,
+    signs_keyboard,
+)
 from .models import Subscription, User
 
 logger = logging.getLogger(__name__)

@@ -26,7 +26,10 @@ def ensure_schema() -> None:
         return
 
     with engine.begin() as conn:
-        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
+        rows = conn.execute(text("PRAGMA table_info(users)")).fetchall()
+        if not rows:
+            return
+        columns = {row[1] for row in rows}
         if "joke_subscribed" not in columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN joke_subscribed BOOLEAN NOT NULL DEFAULT 0"))
 

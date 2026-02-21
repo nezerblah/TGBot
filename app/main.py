@@ -22,8 +22,8 @@ app.include_router(webhook_router)
 # create tables if not exist (simple approach)
 try:
     logger.info("Creating database tables...")
-    ensure_schema()
     Base.metadata.create_all(bind=engine)
+    ensure_schema()
     logger.info("Database tables created successfully")
 except Exception as e:
     logger.warning(f"Warning: Could not create tables on startup: {e}")
