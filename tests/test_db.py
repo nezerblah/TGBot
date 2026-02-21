@@ -1,8 +1,9 @@
 from app import models
-from app.db import Base, SessionLocal, engine
+from app.db import Base, SessionLocal, engine, ensure_schema
 
 
 def test_create_db():
+    ensure_schema()
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:

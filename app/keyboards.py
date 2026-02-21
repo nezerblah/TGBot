@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 ZODIAC_SIGNS = [
     "aries",
@@ -56,3 +56,8 @@ def sign_detail_keyboard(sign: str, subscribed: bool = False):
 def back_keyboard():
     """Build simple back keyboard"""
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data="back:list")]])
+
+
+def joke_subscription_keyboard(subscribed: bool) -> ReplyKeyboardMarkup:
+    label = "Отписаться от шуток" if subscribed else "Подписаться на шутки"
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=label)]], resize_keyboard=True)

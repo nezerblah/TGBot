@@ -58,17 +58,17 @@ async def send_daily(bot):
 
 
 async def send_daily_joke(bot):
-    """Send daily joke to all active subscribers"""
+    """Send daily joke to opted-in users"""
     try:
         logger.info("Starting daily joke distribution...")
         db = SessionLocal()
         try:
-            user_ids = db.query(User.telegram_id).join(Subscription).filter(Subscription.active).distinct().all()
+            user_ids = db.query(User.telegram_id).filter(User.joke_subscribed.is_(True)).all()
         finally:
             db.close()
 
         if not user_ids:
-            logger.info("No active users for joke distribution")
+            logger.info("No opted-in users for joke distribution")
             return
 
         joke = await fetch_random_joke()
