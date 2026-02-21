@@ -16,8 +16,10 @@ from .keyboards import (
     joke_subscription_keyboard,
     sign_detail_keyboard,
     signs_keyboard,
+    tarot_open_keyboard,
 )
 from .models import Subscription, User
+from .tarot import draw_random_card
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,24 @@ _VALID_SIGNS = frozenset(ZODIAC_SIGNS)
 
 _JOKE_SUBSCRIBE_TEXT = "Подписаться на шутки"
 _JOKE_UNSUBSCRIBE_TEXT = "Отписаться от шуток"
+_TAROT_BUTTON_TEXT = "🔮 Получить предсказание"
+
+_TAROT_INTRO = (
+    "🔮 <b>Гадание на картах Таро</b>\n\n"
+    "Карты не могут ответить «Да» или «Нет», формулируйте вопрос с учётом этого, например:\n"
+    "• «Что меня ждёт в ближайшем будущем?»\n"
+    "• «Как лучше провести сегодняшний день?»\n"
+    "• «Карта дня на сегодня»\n"
+    "• «К чему приведут мои действия?»\n\n"
+    "В этом гадании используется вся колода Старших Арканов, но без перевёрнутых карт. "
+    "По правилам гаданий задавать определённый вопрос можно только один раз, "
+    "иначе следующие ответы будут неточными. Вместо этого лучше задавать уточняющие вопросы, "
+    "чтобы лучше понять ситуацию.\n\n"
+    "Помните, карты не определяют ваше будущее, они могут только подсказывать, "
+    "предостерегать или предлагать варианты. Судьба всегда в ваших руках, "
+    "верьте в лучшее и уверенно идите по жизненному пути.\n\n"
+    "✨ Сфокусируйтесь на вашем вопросе, очистите разум и нажмите кнопку <b>«Открыть карту»</b>."
+)
 
 
 def _cleanup_callback_cache(now: float) -> None:
@@ -423,3 +443,34 @@ async def handle_joke_subscription(bot, msg: types.Message, subscribed: bool):
     await asyncio.to_thread(_set_joke_subscription, msg.from_user.id, subscribed)
     label = "Вы подписались на ежедневные шутки" if subscribed else "Вы отписались от ежедневных шуток"
     await bot.send_message(msg.chat.id, label, reply_markup=joke_subscription_keyboard(subscribed))
+
+
+async def handle_tarot_intro(bot, msg: types.Message):
+    """Send tarot intro message with 'Open card' button."""
+    await bot.send_message(msg.chat.id, _TAROT_INTRO, reply_markup=tarot_open_keyboard(), parse_mode="HTML")
+
+
+async def handle_tarot_open(bot, cb: types.CallbackQuery):
+    """Draw a random tarot card and send it to the user."""
+    try:
+        await bot.answer_callback_query(cb.id, text="🃏 Открываю карту...")
+    except Exception as e:
+        logger.warning(f"Could not answer tarot callback: {e}")
+
+    card = draw_random_card()
+    caption = f"🃏 <b>{card['name']}</b> ({card['name_en']})\nАркан: {card['number']}\n\n{card['meaning']}"
+
+    try:
+        await bot.send_photo(cb.message.chat.id, photo=card["image"], caption=caption, parse_mode="HTML")
+    except Exception as e:
+        logger.warning(f"Failed to send tarot photo, sending text only: {e}")
+        await bot.send_message(cb.message.chat.id, caption, parse_mode="HTML")
+
+    try:
+        await bot.edit_message_reply_markup(
+            chat_id=cb.message.chat.id,
+            message_id=cb.message.message_id,
+            reply_markup=None,
+        )
+    except Exception as e:
+        logger.warning(f"Could not remove tarot keyboard: {e}")
