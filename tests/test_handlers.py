@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from app.handlers import (
     _check_and_increment_tarot_limit,
     _get_or_create_user,
+    _is_admin,
     _is_duplicate_callback,
     _is_valid_sign,
 )
@@ -156,3 +157,35 @@ def test_tarot_limit_resets_on_new_week(mock_session_class: MagicMock, mock_prem
 
     assert allowed is True
     assert mock_user.tarot_weekly_count == 1
+
+
+def test_is_admin_returns_true_for_admin_id() -> None:
+    """Admin telegram_id should be recognised as admin."""
+    with patch("app.handlers.ADMIN_ID", 12345):
+        assert _is_admin(12345) is True
+
+
+def test_is_admin_returns_false_for_regular_user() -> None:
+    """Non-admin telegram_id should not be recognised as admin."""
+    with patch("app.handlers.ADMIN_ID", 12345):
+        assert _is_admin(99999) is False
+
+
+def test_is_admin_returns_false_when_admin_id_zero() -> None:
+    """ADMIN_ID=0 means no admin configured — always return False."""
+    with patch("app.handlers.ADMIN_ID", 0):
+        assert _is_admin(0) is False
+
+
+@patch("app.handlers._is_admin", return_value=True)
+@patch("app.handlers._is_premium", return_value=False)
+@patch("app.handlers.SessionLocal")
+def test_tarot_limit_bypassed_for_admin(
+    mock_session_class: MagicMock, mock_premium: MagicMock, mock_admin: MagicMock
+) -> None:
+    """Admin should bypass tarot weekly limit regardless of premium status."""
+    allowed, remaining = _check_and_increment_tarot_limit(12345)
+
+    assert allowed is True
+    assert remaining == 999
+    mock_session_class.assert_not_called()

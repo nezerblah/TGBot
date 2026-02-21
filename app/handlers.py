@@ -22,7 +22,7 @@ from .keyboards import (
     spreads_keyboard,
     tarot_open_keyboard,
 )
-from .models import Subscription, User
+from .models import ProcessedUpdate, Subscription, User
 from .payments import (
     _activate_premium,
     _activate_premium_plus,
@@ -38,6 +38,14 @@ from .tarot import draw_random_card
 logger = logging.getLogger(__name__)
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+
+_pending_broadcast: dict[int, dict[str, str]] = {}
+
+
+def _is_admin(telegram_id: int) -> bool:
+    """Return True if the caller is the configured bot administrator."""
+    return ADMIN_ID != 0 and telegram_id == ADMIN_ID
+
 
 _CALLBACK_DEBOUNCE_SECONDS = 1.0
 _CALLBACK_CACHE_MAX_SIZE = 5000
@@ -254,7 +262,7 @@ def _set_tarot_daily_subscription(telegram_id: int, subscribed: bool) -> bool:
 
 def _check_and_increment_tarot_limit(telegram_id: int) -> tuple[bool, int]:
     """Check weekly tarot limit and increment counter. Returns (allowed, remaining)."""
-    if _is_premium(telegram_id):
+    if _is_admin(telegram_id) or _is_premium(telegram_id):
         return True, 999
 
     db = SessionLocal()
@@ -297,6 +305,72 @@ def _get_daily_sub_state(telegram_id: int) -> bool:
         db.close()
 
 
+def _get_admin_stats() -> dict[str, int]:
+    """Gather comprehensive admin statistics."""
+    db = SessionLocal()
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        total_users = db.query(func.count(User.id)).scalar() or 0
+
+        premium_count = 0
+        plus_count = 0
+        for user in db.query(User).all():
+            if user.premium_until and user.premium_until > now:
+                premium_count += 1
+            if user.premium_plus_until and user.premium_plus_until > now:
+                plus_count += 1
+
+        daily_tarot_subs = db.query(func.count(User.id)).filter(User.tarot_daily_subscribed.is_(True)).scalar() or 0
+        horo_subs = db.query(func.count(func.distinct(Subscription.user_id))).filter(Subscription.active).scalar() or 0
+
+        day_ago = now - datetime.timedelta(days=1)
+        week_ago = now - datetime.timedelta(days=7)
+        month_ago = now - datetime.timedelta(days=30)
+        req_24h = db.query(func.count(ProcessedUpdate.id)).filter(ProcessedUpdate.processed_at >= day_ago).scalar() or 0
+        req_7d = db.query(func.count(ProcessedUpdate.id)).filter(ProcessedUpdate.processed_at >= week_ago).scalar() or 0
+        req_30d = (
+            db.query(func.count(ProcessedUpdate.id)).filter(ProcessedUpdate.processed_at >= month_ago).scalar() or 0
+        )
+
+        return {
+            "total_users": total_users,
+            "premium_count": premium_count,
+            "plus_count": plus_count,
+            "daily_tarot_subs": daily_tarot_subs,
+            "horo_subs": horo_subs,
+            "req_24h": req_24h,
+            "req_7d": req_7d,
+            "req_30d": req_30d,
+        }
+    finally:
+        db.close()
+
+
+def _get_all_user_ids() -> list[int]:
+    """Return all user telegram_ids."""
+    db = SessionLocal()
+    try:
+        return [tid for (tid,) in db.query(User.telegram_id).all()]
+    finally:
+        db.close()
+
+
+def _get_non_premium_user_ids() -> list[int]:
+    """Return telegram_ids of users without any active subscription."""
+    db = SessionLocal()
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        result = []
+        for user in db.query(User).all():
+            has_premium = user.premium_until and user.premium_until > now
+            has_plus = user.premium_plus_until and user.premium_plus_until > now
+            if not has_premium and not has_plus:
+                result.append(user.telegram_id)
+        return result
+    finally:
+        db.close()
+
+
 async def setup_handlers(bot, update: types.Update):  # noqa: C901
     """Main dispatcher for handling messages and callbacks"""
     try:
@@ -308,6 +382,12 @@ async def setup_handlers(bot, update: types.Update):  # noqa: C901
                 return
 
             logger.info(f"Message from {msg.from_user.id}: {msg.text}")
+
+            # Broadcast flow: capture next message from admin as broadcast text
+            if msg.from_user.id in _pending_broadcast and msg.text and not msg.text.startswith("/cancel"):
+                await _finalize_broadcast(bot, msg)
+                return
+
             if msg.text:
                 if msg.text == _TAROT_DAILY_SUBSCRIBE_TEXT:
                     await handle_tarot_daily_subscription(bot, msg, True)
@@ -323,16 +403,27 @@ async def setup_handlers(bot, update: types.Update):  # noqa: C901
                     await handle_list(bot, msg)
                 elif msg.text.startswith("/me"):
                     await handle_me(bot, msg)
+                elif msg.text.startswith("/help_adminxq") and _is_admin(msg.from_user.id):
+                    await handle_admin_help(bot, msg)
                 elif msg.text.startswith("/help"):
                     await handle_help(bot, msg)
                 elif msg.text.startswith("/tarot"):
                     await handle_tarot_intro(bot, msg)
                 elif msg.text == _TAROT_BUTTON_TEXT:
                     await handle_tarot_intro(bot, msg)
-                elif msg.text.startswith("/subscribers") and msg.from_user.id == ADMIN_ID:
+                elif msg.text.startswith("/stats") and _is_admin(msg.from_user.id):
+                    await handle_admin_stats(bot, msg)
+                elif msg.text.startswith("/broadcast_all") and _is_admin(msg.from_user.id):
+                    await handle_broadcast_start(bot, msg, "all")
+                elif msg.text.startswith("/broadcast_free") and _is_admin(msg.from_user.id):
+                    await handle_broadcast_start(bot, msg, "free")
+                elif msg.text.startswith("/subscribers") and _is_admin(msg.from_user.id):
                     await handle_subscribers(bot, msg)
-                elif msg.text.startswith("/send_now") and msg.from_user.id == ADMIN_ID:
+                elif msg.text.startswith("/send_now") and _is_admin(msg.from_user.id):
                     await handle_send_now(bot, msg)
+                elif msg.text.startswith("/cancel") and _is_admin(msg.from_user.id):
+                    _pending_broadcast.pop(msg.from_user.id, None)
+                    await bot.send_message(msg.chat.id, "✅ Действие отменено.")
                 else:
                     await bot.send_message(msg.chat.id, "Неизвестная команда. Используйте /list или /start")
         elif update.pre_checkout_query:
@@ -526,6 +617,80 @@ async def handle_send_now(bot, msg: types.Message):
     await bot.send_message(msg.chat.id, "Рассылка отправлена")
 
 
+async def handle_admin_help(bot, msg: types.Message):
+    """Show hidden admin command reference."""
+    text = (
+        "🔐 <b>Команды администратора</b>\n\n"
+        "/stats — статистика бота\n"
+        "/subscribers — подписки по знакам зодиака\n"
+        "/broadcast_all — рассылка ВСЕМ пользователям\n"
+        "/broadcast_free — рассылка пользователям БЕЗ Premium/Premium+\n"
+        "/send_now — принудительная рассылка гороскопов\n"
+        "/cancel — отмена текущего действия\n"
+        "/help_adminxq — эта справка\n\n"
+        "ℹ️ Админ имеет безлимитный доступ ко всем функциям бота."
+    )
+    await bot.send_message(msg.chat.id, text, parse_mode="HTML")
+
+
+async def handle_admin_stats(bot, msg: types.Message):
+    """Show comprehensive bot statistics (admin only)."""
+    stats = await asyncio.to_thread(_get_admin_stats)
+    text = (
+        "📊 <b>Статистика бота</b>\n\n"
+        f"👥 Всего пользователей: {stats['total_users']}\n"
+        f"⭐ Premium подписок: {stats['premium_count']}\n"
+        f"💎 Premium+ подписок: {stats['plus_count']}\n"
+        f"🌙 Подписок на ежедневную карту: {stats['daily_tarot_subs']}\n"
+        f"♈ Подписок на гороскопы: {stats['horo_subs']}\n\n"
+        "━━━━━━━━━━━━━━━\n"
+        f"📨 Запросов за 24ч: {stats['req_24h']}\n"
+        f"📨 Запросов за 7д: {stats['req_7d']}\n"
+        f"📨 Запросов за 30д: {stats['req_30d']}"
+    )
+    await bot.send_message(msg.chat.id, text, parse_mode="HTML")
+
+
+async def handle_broadcast_start(bot, msg: types.Message, target: str):
+    """Start two-step broadcast: save target, ask admin for message text."""
+    _pending_broadcast[msg.from_user.id] = {"target": target}
+    label = "ВСЕМ пользователям" if target == "all" else "пользователям БЕЗ подписки"
+    await bot.send_message(
+        msg.chat.id,
+        f"📢 Рассылка: {label}\n\nВведите текст сообщения (или /cancel для отмены):",
+    )
+
+
+async def _finalize_broadcast(bot, msg: types.Message) -> None:
+    """Execute broadcast with admin's message text."""
+    state = _pending_broadcast.pop(msg.from_user.id, None)
+    if not state:
+        return
+
+    target = state["target"]
+    broadcast_text = msg.text or ""
+
+    if target == "all":
+        user_ids = await asyncio.to_thread(_get_all_user_ids)
+    else:
+        user_ids = await asyncio.to_thread(_get_non_premium_user_ids)
+
+    sent = 0
+    failed = 0
+    for uid in user_ids:
+        try:
+            await bot.send_message(uid, broadcast_text)
+            sent += 1
+        except Exception as e:
+            logger.warning(f"Broadcast failed for {uid}: {e}")
+            failed += 1
+
+    await bot.send_message(
+        msg.chat.id,
+        f"📢 Рассылка завершена.\n✅ Доставлено: {sent}\n❌ Ошибки: {failed}",
+    )
+
+
 async def handle_tarot_intro(bot, msg: types.Message):
     """Send tarot intro message with 'Open card' button."""
     await bot.send_message(msg.chat.id, _TAROT_INTRO, reply_markup=tarot_open_keyboard(), parse_mode="HTML")
@@ -680,9 +845,9 @@ async def handle_spread_result(bot, cb: types.CallbackQuery):
     except Exception as e:
         logger.warning(f"Could not answer spread callback: {e}")
 
-    # Only Premium+ gives unlimited access to complex spreads
-    has_plus = await asyncio.to_thread(_is_premium_plus, cb.from_user.id)
-    if not has_plus:
+    # Admin and Premium+ get unlimited access to complex spreads
+    has_access = _is_admin(cb.from_user.id) or await asyncio.to_thread(_is_premium_plus, cb.from_user.id)
+    if not has_access:
         text = (
             "🔒 Сложные расклады доступны по подписке Premium+ или разово.\n\n"
             "💎 Premium+ — безлимит на ВСЁ (100 ⭐ / ~200 руб/мес)\n"
