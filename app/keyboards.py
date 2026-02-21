@@ -66,7 +66,7 @@ def back_keyboard():
 def main_menu_keyboard(tarot_daily_subscribed: bool) -> ReplyKeyboardMarkup:
     """Build main reply keyboard with tarot and daily subscription buttons."""
     daily_label = (
-        "🌙 Отписаться от ежедневного расклада" if tarot_daily_subscribed else "🌙 Подписаться на ежедневный расклад"
+        "🌙 Отписаться от ежедневного предсказания" if tarot_daily_subscribed else "🌙 Подписаться на ежедневное предсказание"
     )
     return ReplyKeyboardMarkup(
         keyboard=[

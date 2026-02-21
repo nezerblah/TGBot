@@ -32,8 +32,8 @@ _last_callback: OrderedDict[tuple[int, str], float] = OrderedDict()
 _VALID_SIGNS = frozenset(ZODIAC_SIGNS)
 
 _TAROT_BUTTON_TEXT = "🔮 Получить предсказание"
-_TAROT_DAILY_SUBSCRIBE_TEXT = "🌙 Подписаться на ежедневный расклад"
-_TAROT_DAILY_UNSUBSCRIBE_TEXT = "🌙 Отписаться от ежедневного расклада"
+_TAROT_DAILY_SUBSCRIBE_TEXT = "🌙 Подписаться на ежедневное предсказание"
+_TAROT_DAILY_UNSUBSCRIBE_TEXT = "🌙 Отписаться от ежедневного предсказания"
 
 _TAROT_INTRO = (
     "🔮 <b>Гадание на картах Таро</b>\n\n"
