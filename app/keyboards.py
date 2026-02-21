@@ -65,4 +65,19 @@ def back_keyboard():
 
 def joke_subscription_keyboard(subscribed: bool) -> ReplyKeyboardMarkup:
     label = "Отписаться от шуток" if subscribed else "Подписаться на шутки"
-    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=label)]], resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=label)],
+            [KeyboardButton(text="🔮 Получить предсказание")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def tarot_open_keyboard() -> InlineKeyboardMarkup:
+    """Build inline keyboard with 'Open card' button."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🃏 Открыть карту", callback_data="tarot:open")],
+        ]
+    )
