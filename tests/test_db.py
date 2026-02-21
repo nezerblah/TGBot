@@ -3,8 +3,8 @@ from app.db import Base, SessionLocal, engine, ensure_schema
 
 
 def test_create_db():
-    ensure_schema()
     Base.metadata.create_all(bind=engine)
+    ensure_schema()
     db = SessionLocal()
     try:
         existing = db.query(models.User).filter_by(telegram_id=12345).first()
