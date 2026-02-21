@@ -2,8 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from app.handlers import (_get_or_create_user, _is_duplicate_callback,
-                          _is_valid_sign)
+from app.handlers import _get_or_create_user, _is_duplicate_callback, _is_valid_sign
 
 
 def test_is_valid_sign_accepts_valid_signs() -> None:
