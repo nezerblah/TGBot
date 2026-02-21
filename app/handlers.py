@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import time
-from collections import OrderedDict
+from collections import OrderedDict  # noqa: E402
 
 from aiogram import types
 from sqlalchemy import func
