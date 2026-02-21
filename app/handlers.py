@@ -284,6 +284,8 @@ def _get_user_menu_state(telegram_id: int) -> tuple[bool, bool]:
             return False, False
         daily = bool(user.tarot_daily_subscribed)
         now = datetime.datetime.now(datetime.timezone.utc)
+        if user.premium_until and user.premium_until.tzinfo is None:
+            now = now.replace(tzinfo=None)
         premium = bool(user.premium_until and user.premium_until > now)
         return daily, premium
     finally:

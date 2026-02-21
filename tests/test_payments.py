@@ -26,7 +26,7 @@ def test_is_premium_returns_false_when_expired(mock_session_class: MagicMock) ->
     mock_session_class.return_value = mock_db
 
     mock_user = MagicMock()
-    mock_user.premium_until = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
+    mock_user.premium_until = datetime.datetime(2020, 1, 1)
     mock_db.query.return_value.filter_by.return_value.first.return_value = mock_user
 
     assert _is_premium(12345) is False
@@ -39,7 +39,9 @@ def test_is_premium_returns_true_when_active(mock_session_class: MagicMock) -> N
     mock_session_class.return_value = mock_db
 
     mock_user = MagicMock()
-    mock_user.premium_until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=10)
+    mock_user.premium_until = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(
+        days=10
+    )
     mock_db.query.return_value.filter_by.return_value.first.return_value = mock_user
 
     assert _is_premium(12345) is True
@@ -57,7 +59,7 @@ def test_activate_premium_sets_correct_date(mock_session_class: MagicMock) -> No
 
     result = _activate_premium(12345)
 
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     assert result > now
     assert (result - now).days >= 29
 
@@ -68,7 +70,7 @@ def test_activate_premium_extends_existing_subscription(mock_session_class: Magi
     mock_db = MagicMock()
     mock_session_class.return_value = mock_db
 
-    future_date = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=15)
+    future_date = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(days=15)
     mock_user = MagicMock()
     mock_user.premium_until = future_date
     mock_db.query.return_value.filter_by.return_value.first.return_value = mock_user

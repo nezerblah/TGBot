@@ -23,7 +23,11 @@ def _is_premium(telegram_id: int) -> bool:
         user = db.query(User).filter_by(telegram_id=telegram_id).first()
         if not user or not user.premium_until:
             return False
-        return user.premium_until > datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        # SQLite returns naive datetimes — strip tzinfo for comparison
+        if user.premium_until.tzinfo is None:
+            now = now.replace(tzinfo=None)
+        return user.premium_until > now
     finally:
         db.close()
 
@@ -40,6 +44,9 @@ def _activate_premium(telegram_id: int, days: int = PREMIUM_DAYS) -> datetime.da
             db.refresh(user)
 
         now = datetime.datetime.now(datetime.timezone.utc)
+        # SQLite returns naive datetimes — strip tzinfo for comparison
+        if not user.premium_until or user.premium_until.tzinfo is None:
+            now = now.replace(tzinfo=None)
         base = user.premium_until if user.premium_until and user.premium_until > now else now
         user.premium_until = base + datetime.timedelta(days=days)
         db.commit()
