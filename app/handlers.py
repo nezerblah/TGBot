@@ -298,6 +298,7 @@ async def handle_help(bot, msg: types.Message):
         "/list — список знаков\n"
         "/me — мои подписки\n"
         "/joke — случайный анекдот\n"
+        "/tarot — расклад Таро (10 ₽)\n"
         "/help — помощь"
     )
     await bot.send_message(msg.chat.id, text, reply_markup=joke_subscription_keyboard(subscribed))

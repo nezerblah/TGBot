@@ -43,6 +43,7 @@ async def setup_bot_commands() -> None:
         BotCommand(command="list", description="Список знаков"),
         BotCommand(command="me", description="Мои подписки"),
         BotCommand(command="joke", description="Случайный анекдот"),
+        BotCommand(command="tarot", description="Расклад Таро (10 ₽)"),
         BotCommand(command="help", description="Помощь"),
     ]
     await bot_instance.set_my_commands(commands)
