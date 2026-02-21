@@ -120,4 +120,3 @@ async def test_send_daily_tarot_sends_to_all_subscribers(
     await send_daily_tarot(mock_bot)
 
     assert mock_bot.send_photo.call_count == 3
-

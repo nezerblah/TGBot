@@ -145,4 +145,3 @@ def test_tarot_limit_resets_on_new_week(mock_session_class: MagicMock) -> None:
 
     assert allowed is True
     assert mock_user.tarot_weekly_count == 1
-

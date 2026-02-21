@@ -129,9 +129,7 @@ def setup_scheduler(bot):
             coalesce=True,
         )
         sched.start()
-        logger.info(
-            f"Scheduler started. Daily horoscope: {hour:02d}:{minute:02d} MSK, Daily tarot: 10:00 MSK"
-        )
+        logger.info(f"Scheduler started. Daily horoscope: {hour:02d}:{minute:02d} MSK, Daily tarot: 10:00 MSK")
         return sched
     except Exception as e:
         logger.error(f"Failed to setup scheduler: {e}", exc_info=True)

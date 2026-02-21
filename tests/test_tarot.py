@@ -57,8 +57,6 @@ def test_draw_random_card_can_return_minor_arcana() -> None:
     suits_seen = set()
     for _ in range(200):
         card = draw_random_card()
-        if "suit" not in card or card.get("name_en", "").endswith(
-            ("of Wands", "of Cups", "of Swords", "of Pentacles")
-        ):
+        if "suit" not in card or card.get("name_en", "").endswith(("of Wands", "of Cups", "of Swords", "of Pentacles")):
             suits_seen.add(card.get("name_en", "").split(" of ")[-1] if " of " in card.get("name_en", "") else None)
     assert len(suits_seen) > 1
