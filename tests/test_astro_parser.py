@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from app.astro_parser import SPREADS, fetch_spread
+from app.astro_parser import SPREADS, _format_spread_lines, fetch_spread
 
 
 def test_spreads_dict_has_required_keys() -> None:
@@ -58,3 +58,27 @@ async def test_fetch_spread_returns_none_on_request_error(mock_client_class: Asy
 
     result = await fetch_spread("lovers")
     assert result is None
+
+
+def test_format_spread_lines_strips_digit_only_lines() -> None:
+    """Lines consisting only of digits should be removed from output."""
+    lines = ["1", "2", "3", "Some actual content here", "4", "More content"]
+    result = _format_spread_lines(lines)
+    assert "Some actual content here" in result
+    assert "More content" in result
+    # Standalone digit lines should not appear
+    for digit in ["1", "2", "3", "4"]:
+        # Digit may appear inside other words, but not as standalone line
+        result_lines = result.split("\n")
+        for rl in result_lines:
+            assert rl.strip() != digit
+
+
+def test_format_spread_lines_formats_position_headers() -> None:
+    """Position headers like '1 – Description' should be formatted with separator."""
+    lines = ["1 – Влияние прошлого", "Четвёрка мечей", "Описание карты"]
+    result = _format_spread_lines(lines)
+    assert "━━━━━━━━━━━━━━━" in result
+    assert "📍" in result
+    assert "🔮" in result
+    assert "<b>" in result

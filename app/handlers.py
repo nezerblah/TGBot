@@ -15,13 +15,24 @@ from .keyboards import (
     SIGN_TITLES,
     ZODIAC_SIGNS,
     main_menu_keyboard,
+    premium_info_keyboard,
     sign_detail_keyboard,
     signs_keyboard,
+    spread_paywall_keyboard,
     spreads_keyboard,
     tarot_open_keyboard,
 )
 from .models import Subscription, User
-from .payments import _activate_premium, _is_premium, send_premium_invoice
+from .payments import (
+    _activate_premium,
+    _activate_premium_plus,
+    _get_premium_info,
+    _is_premium,
+    _is_premium_plus,
+    send_premium_invoice,
+    send_premium_plus_invoice,
+    send_spread_single_invoice,
+)
 from .tarot import draw_random_card
 
 logger = logging.getLogger(__name__)
@@ -35,12 +46,11 @@ _last_callback: OrderedDict[tuple[int, str], float] = OrderedDict()
 _VALID_SIGNS = frozenset(ZODIAC_SIGNS)
 _VALID_SPREADS = frozenset(SPREADS.keys())
 
-_TAROT_BUTTON_TEXT = "🔮 Получить предсказание"
-_SPREADS_BUTTON_TEXT = "🔮 Выбрать расклад"
-_TAROT_DAILY_SUBSCRIBE_TEXT = "🌙 Подписаться на ежедневное предсказание"
-_TAROT_DAILY_UNSUBSCRIBE_TEXT = "🌙 Отписаться от ежедневного предсказания"
-_PREMIUM_BUTTON_TEXT = "⭐ Premium — безлимит"
-_PREMIUM_ACTIVE_TEXT = "⭐ Premium активен ✓"
+_TAROT_BUTTON_TEXT = "🔮 Предсказание"
+_SPREADS_BUTTON_TEXT = "🔮 Расклады"
+_TAROT_DAILY_SUBSCRIBE_TEXT = "🌙 Ежедневная карта"
+_TAROT_DAILY_UNSUBSCRIBE_TEXT = "🌙 Ежедневная карта ✓"
+_PREMIUM_BUTTON_TEXT = "⭐ Подписки и тарифы"
 
 _TAROT_INTRO = (
     "🔮 <b>Гадание на картах Таро</b>\n\n"
@@ -275,24 +285,19 @@ def _check_and_increment_tarot_limit(telegram_id: int) -> tuple[bool, int]:
         db.close()
 
 
-def _get_user_menu_state(telegram_id: int) -> tuple[bool, bool]:
-    """Return (tarot_daily_subscribed, is_premium) for menu rendering."""
+def _get_daily_sub_state(telegram_id: int) -> bool:
+    """Return tarot_daily_subscribed for menu rendering."""
     db = SessionLocal()
     try:
         user = db.query(User).filter_by(telegram_id=telegram_id).first()
         if not user:
-            return False, False
-        daily = bool(user.tarot_daily_subscribed)
-        now = datetime.datetime.now(datetime.timezone.utc)
-        if user.premium_until and user.premium_until.tzinfo is None:
-            now = now.replace(tzinfo=None)
-        premium = bool(user.premium_until and user.premium_until > now)
-        return daily, premium
+            return False
+        return bool(user.tarot_daily_subscribed)
     finally:
         db.close()
 
 
-async def setup_handlers(bot, update: types.Update):
+async def setup_handlers(bot, update: types.Update):  # noqa: C901
     """Main dispatcher for handling messages and callbacks"""
     try:
         if update.message:
@@ -309,8 +314,6 @@ async def setup_handlers(bot, update: types.Update):
                 elif msg.text == _TAROT_DAILY_UNSUBSCRIBE_TEXT:
                     await handle_tarot_daily_subscription(bot, msg, False)
                 elif msg.text == _PREMIUM_BUTTON_TEXT:
-                    await handle_premium_info(bot, msg)
-                elif msg.text == _PREMIUM_ACTIVE_TEXT:
                     await handle_premium_info(bot, msg)
                 elif msg.text == _SPREADS_BUTTON_TEXT:
                     await handle_spreads_menu(bot, msg)
@@ -379,6 +382,8 @@ async def setup_handlers(bot, update: types.Update):
                 await handle_tarot_open(bot, cb)
             elif data.startswith("spread:"):
                 await handle_spread_result(bot, cb)
+            elif data.startswith("buy:"):
+                await handle_buy_callback(bot, cb)
     except Exception as e:
         logger.error(f"Error in setup_handlers: {e}", exc_info=True)
         raise
@@ -386,8 +391,8 @@ async def setup_handlers(bot, update: types.Update):
 
 async def _send_menu(bot, chat_id: int, telegram_id: int) -> None:
     """Helper to send the main menu keyboard with correct state."""
-    daily, premium = await asyncio.to_thread(_get_user_menu_state, telegram_id)
-    await bot.send_message(chat_id, "Меню:", reply_markup=main_menu_keyboard(daily, premium))
+    daily = await asyncio.to_thread(_get_daily_sub_state, telegram_id)
+    await bot.send_message(chat_id, "Меню:", reply_markup=main_menu_keyboard(daily))
 
 
 async def handle_start(bot, msg: types.Message):
@@ -398,26 +403,27 @@ async def handle_start(bot, msg: types.Message):
         msg.from_user.first_name,
         msg.from_user.last_name,
     )
-    daily, premium = await asyncio.to_thread(_get_user_menu_state, msg.from_user.id)
+    daily = await asyncio.to_thread(_get_daily_sub_state, msg.from_user.id)
     text = "Привет! Я бот с гороскопами и раскладами Таро.\nВыберите знак зодиака или используйте команды из меню."
-    await bot.send_message(msg.chat.id, text, reply_markup=main_menu_keyboard(daily, premium))
+    await bot.send_message(msg.chat.id, text, reply_markup=main_menu_keyboard(daily))
     await bot.send_message(msg.chat.id, "Выберите знак зодиака:", reply_markup=signs_keyboard())
 
 
 async def handle_help(bot, msg: types.Message):
-    daily, premium = await asyncio.to_thread(_get_user_menu_state, msg.from_user.id)
+    daily = await asyncio.to_thread(_get_daily_sub_state, msg.from_user.id)
     text = (
         "Доступные команды:\n"
         "/start — начать работу\n"
-        "/list — список знаков\n"
-        "/me — мои подписки\n"
-        "/tarot — 🔮 предсказание Таро\n"
+        "/list — знаки зодиака\n"
+        "/me — мои подписки на гороскопы\n"
+        "/tarot — быстрое предсказание (1 карта)\n"
         "/help — помощь\n\n"
-        "🔮 Кнопка «Выбрать расклад» — развёрнутые расклады Таро\n"
-        "🌙 Кнопка «Подписаться на ежедневное предсказание» — карта Таро каждое утро в 10:00 МСК\n"
-        "⭐ Premium — безлимитные предсказания за 99 руб/мес"
+        "🔮 Предсказание — карта Таро (10 бесплатных в неделю)\n"
+        "🔮 Расклады — развёрнутые расклады (Premium+ или разово)\n"
+        "🌙 Ежедневная карта — подписка на утреннее предсказание\n"
+        "⭐ Подписки — управление тарифами Premium / Premium+"
     )
-    await bot.send_message(msg.chat.id, text, reply_markup=main_menu_keyboard(daily, premium))
+    await bot.send_message(msg.chat.id, text, reply_markup=main_menu_keyboard(daily))
 
 
 async def handle_list(bot, msg: types.Message):
@@ -536,13 +542,13 @@ async def handle_tarot_open(bot, cb: types.CallbackQuery):
     if not allowed:
         await bot.send_message(
             cb.message.chat.id,
-            "⛔ Вы исчерпали лимит раскладов на эту неделю (10/10).\nЛимит обновится в понедельник.\n\n"
-            "⭐ Оформите Premium для безлимитных предсказаний!",
+            "⛔ Вы исчерпали лимит предсказаний на эту неделю (10/10).\nЛимит обновится в понедельник.\n\n"
+            "🔮 Оформите Premium для безлимитных предсказаний!",
         )
         return
 
     card = draw_random_card()
-    limit_line = "" if remaining == 999 else f"\n\n📊 Осталось раскладов на этой неделе: {remaining}"
+    limit_line = "" if remaining == 999 else f"\n\n📊 Осталось предсказаний на этой неделе: {remaining}"
     caption = (
         f"🃏 <b>{card['name']}</b> ({card['name_en']})\n"
         f"Аркан: {card['number']}\n\n"
@@ -568,40 +574,32 @@ async def handle_tarot_open(bot, cb: types.CallbackQuery):
 async def handle_tarot_daily_subscription(bot, msg: types.Message, subscribed: bool):
     """Toggle daily tarot subscription for a user."""
     await asyncio.to_thread(_set_tarot_daily_subscription, msg.from_user.id, subscribed)
-    is_premium = await asyncio.to_thread(_is_premium, msg.from_user.id)
     if subscribed:
         label = "🌙 Вы подписались на ежедневное предсказание Таро. Карта будет приходить каждое утро в 10:00 МСК."
     else:
         label = "🌙 Вы отписались от ежедневного предсказания Таро."
-    await bot.send_message(msg.chat.id, label, reply_markup=main_menu_keyboard(subscribed, is_premium))
+    await bot.send_message(msg.chat.id, label, reply_markup=main_menu_keyboard(subscribed))
 
 
 async def handle_premium_info(bot, msg: types.Message):
-    """Show premium status or send invoice."""
-    is_premium = await asyncio.to_thread(_is_premium, msg.from_user.id)
-    if is_premium:
-        db = SessionLocal()
-        try:
-            user = db.query(User).filter_by(telegram_id=msg.from_user.id).first()
-            until = user.premium_until.strftime("%d.%m.%Y") if user and user.premium_until else "—"
-        finally:
-            db.close()
-        await bot.send_message(
-            msg.chat.id,
-            f"⭐ <b>Premium активен</b>\n\nБезлимитные предсказания до: <b>{until}</b>",
-            parse_mode="HTML",
-        )
-    else:
-        text = (
-            "⭐ <b>Premium подписка</b>\n\n"
-            "🔓 Безлимитные предсказания Таро\n"
-            "🔓 Все расклады без ограничений\n"
-            "💰 Стоимость: 50 ⭐ Telegram Stars (~99 руб)\n"
-            "📅 Срок: 30 дней\n\n"
-            "Нажмите кнопку оплаты ниже:"
-        )
-        await bot.send_message(msg.chat.id, text, parse_mode="HTML")
-        await send_premium_invoice(bot, msg.chat.id)
+    """Show subscription status and purchase options."""
+    info = await asyncio.to_thread(_get_premium_info, msg.from_user.id)
+    p_status = f"активна до {info['premium_until'].strftime('%d.%m.%Y')}" if info["premium"] else "не активна"
+    pp_status = f"активна до {info['plus_until'].strftime('%d.%m.%Y')}" if info["plus"] else "не активна"
+    text = (
+        "⭐ <b>Ваши подписки</b>\n\n"
+        f"📋 Premium: {p_status}\n"
+        f"📋 Premium+: {pp_status}\n\n"
+        "━━━━━━━━━━━━━━━\n"
+        "🔮 <b>Premium</b> — 10 ⭐ (~20 руб/мес)\n"
+        "• Безлимит на быстрые предсказания\n"
+        "• Ежедневная карта\n\n"
+        "💎 <b>Premium+</b> — 100 ⭐ (~200 руб/мес)\n"
+        "• Всё из Premium\n"
+        "• Безлимитные сложные расклады"
+    )
+    kb = premium_info_keyboard(info["premium"], info["plus"])
+    await bot.send_message(msg.chat.id, text, parse_mode="HTML", reply_markup=kb)
 
 
 async def handle_pre_checkout(bot, query: types.PreCheckoutQuery):
@@ -614,18 +612,52 @@ async def handle_pre_checkout(bot, query: types.PreCheckoutQuery):
 
 async def handle_successful_payment(bot, msg: types.Message):
     """Handle successful Telegram Stars payment."""
-    logger.info(f"Successful payment from {msg.from_user.id}: {msg.successful_payment.total_amount} XTR")
-    expiry = await asyncio.to_thread(_activate_premium, msg.from_user.id)
-    until = expiry.strftime("%d.%m.%Y")
-    daily, _ = await asyncio.to_thread(_get_user_menu_state, msg.from_user.id)
-    await bot.send_message(
-        msg.chat.id,
-        f"✅ <b>Premium активирован!</b>\n\n"
-        f"Безлимитные предсказания Таро до: <b>{until}</b>\n"
-        f"Спасибо за поддержку! 🙏",
-        parse_mode="HTML",
-        reply_markup=main_menu_keyboard(daily, True),
-    )
+    payload = msg.successful_payment.invoice_payload
+    logger.info(f"Successful payment from {msg.from_user.id}: {msg.successful_payment.total_amount} XTR, {payload}")
+
+    daily = await asyncio.to_thread(_get_daily_sub_state, msg.from_user.id)
+
+    if payload == "premium_30d":
+        expiry = await asyncio.to_thread(_activate_premium, msg.from_user.id)
+        until = expiry.strftime("%d.%m.%Y")
+        await bot.send_message(
+            msg.chat.id,
+            f"✅ <b>Premium активирован!</b>\n\n"
+            f"Безлимитные быстрые предсказания до: <b>{until}</b>\nСпасибо за поддержку! 🙏",
+            parse_mode="HTML",
+            reply_markup=main_menu_keyboard(daily),
+        )
+    elif payload == "premium_plus_30d":
+        expiry = await asyncio.to_thread(_activate_premium_plus, msg.from_user.id)
+        until = expiry.strftime("%d.%m.%Y")
+        await bot.send_message(
+            msg.chat.id,
+            f"✅ <b>Premium+ активирован!</b>\n\n"
+            f"Безлимит на ВСЕ предсказания до: <b>{until}</b>\nСпасибо за поддержку! 🙏",
+            parse_mode="HTML",
+            reply_markup=main_menu_keyboard(daily),
+        )
+    elif payload.startswith("spread_single:"):
+        spread_key = payload.split(":", 1)[1]
+        await _send_paid_spread(bot, msg.chat.id, spread_key)
+    else:
+        logger.warning(f"Unknown payment payload: {payload}")
+
+
+async def _send_paid_spread(bot, chat_id: int, spread_key: str) -> None:
+    """Fetch and send a spread result after single purchase (no limit counted)."""
+    spread = SPREADS.get(spread_key)
+    if not spread:
+        await bot.send_message(chat_id, "😔 Неизвестный расклад.")
+        return
+    result = await fetch_spread(spread_key)
+    if not result:
+        await bot.send_message(chat_id, "😔 Не удалось получить расклад, попробуйте позже.")
+        return
+    text = f"{spread['title']}\n{spread['description']}\n\n{result}"
+    if len(text) > TELEGRAM_MESSAGE_LIMIT:
+        text = text[: TELEGRAM_MESSAGE_LIMIT - 3] + "..."
+    await bot.send_message(chat_id, text, parse_mode="HTML")
 
 
 async def handle_spreads_menu(bot, msg: types.Message):
@@ -634,7 +666,7 @@ async def handle_spreads_menu(bot, msg: types.Message):
 
 
 async def handle_spread_result(bot, cb: types.CallbackQuery):
-    """Fetch and send a tarot spread result."""
+    """Fetch and send a tarot spread result (Premium+ or paywall)."""
     spread_key = cb.data.split(":", 1)[1]
     if spread_key not in _VALID_SPREADS:
         try:
@@ -644,16 +676,22 @@ async def handle_spread_result(bot, cb: types.CallbackQuery):
         return
 
     try:
-        await bot.answer_callback_query(cb.id, text="🃏 Тяну карты...")
+        await bot.answer_callback_query(cb.id, text="🃏 Проверяю доступ...")
     except Exception as e:
         logger.warning(f"Could not answer spread callback: {e}")
 
-    allowed, remaining = await asyncio.to_thread(_check_and_increment_tarot_limit, cb.from_user.id)
-    if not allowed:
+    # Only Premium+ gives unlimited access to complex spreads
+    has_plus = await asyncio.to_thread(_is_premium_plus, cb.from_user.id)
+    if not has_plus:
+        text = (
+            "🔒 Сложные расклады доступны по подписке Premium+ или разово.\n\n"
+            "💎 Premium+ — безлимит на ВСЁ (100 ⭐ / ~200 руб/мес)\n"
+            "🎴 Разовый расклад — 15 ⭐ (~30 руб)"
+        )
         await bot.send_message(
             cb.message.chat.id,
-            "⛔ Вы исчерпали лимит раскладов на эту неделю (10/10).\nЛимит обновится в понедельник.\n\n"
-            "⭐ Оформите Premium для безлимитных предсказаний!",
+            text,
+            reply_markup=spread_paywall_keyboard(spread_key),
         )
         return
 
@@ -661,20 +699,14 @@ async def handle_spread_result(bot, cb: types.CallbackQuery):
     result = await fetch_spread(spread_key)
 
     if not result:
-        await bot.send_message(
-            cb.message.chat.id,
-            "😔 Не удалось получить расклад, попробуйте позже.",
-        )
+        await bot.send_message(cb.message.chat.id, "😔 Не удалось получить расклад, попробуйте позже.")
         return
 
-    limit_line = "" if remaining == 999 else f"\n\n📊 Осталось раскладов на этой неделе: {remaining}"
-    text = f"{spread['title']}\n{spread['description']}\n\n{result}{limit_line}"
-
-    # Truncate if exceeds Telegram limit
+    text = f"{spread['title']}\n{spread['description']}\n\n{result}"
     if len(text) > TELEGRAM_MESSAGE_LIMIT:
         text = text[: TELEGRAM_MESSAGE_LIMIT - 3] + "..."
 
-    await bot.send_message(cb.message.chat.id, text)
+    await bot.send_message(cb.message.chat.id, text, parse_mode="HTML")
 
     try:
         await bot.edit_message_reply_markup(
@@ -684,3 +716,23 @@ async def handle_spread_result(bot, cb: types.CallbackQuery):
         )
     except Exception as e:
         logger.warning(f"Could not remove spread keyboard: {e}")
+
+
+async def handle_buy_callback(bot, cb: types.CallbackQuery):
+    """Handle buy:premium, buy:premium_plus, buy:spread:{key} callbacks."""
+    data = cb.data
+    try:
+        await bot.answer_callback_query(cb.id)
+    except Exception:
+        pass
+
+    if data == "buy:premium":
+        await send_premium_invoice(bot, cb.message.chat.id)
+    elif data == "buy:premium_plus":
+        await send_premium_plus_invoice(bot, cb.message.chat.id)
+    elif data.startswith("buy:spread:"):
+        spread_key = data.split(":", 2)[2]
+        if spread_key in _VALID_SPREADS:
+            await send_spread_single_invoice(bot, cb.message.chat.id, spread_key)
+        else:
+            await bot.send_message(cb.message.chat.id, "Неизвестный расклад.")

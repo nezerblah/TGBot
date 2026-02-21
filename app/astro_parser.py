@@ -1,5 +1,6 @@
 """Parser for tarot spreads from astrocentr.ru."""
 
+import html as html_module
 import logging
 import random
 import re
@@ -9,6 +10,8 @@ import httpx
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
+
+_POSITION_RE = re.compile(r"^(\d+)\s*[–—-]\s*(.+)")
 
 
 class SpreadInfo(TypedDict):
@@ -50,10 +53,41 @@ def _clean_text(raw: str) -> str:
     return text.strip()
 
 
+def _format_spread_lines(content_lines: list[str]) -> str:
+    """Format spread content lines with HTML markup for Telegram."""
+    result_parts: list[str] = []
+    expect_card_name = False
+
+    for line in content_lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Skip digit-only lines (card position numbers from the site)
+        if stripped.isdigit():
+            continue
+
+        match = _POSITION_RE.match(stripped)
+        if match:
+            # Position header: "1 – Влияние прошлого..."
+            result_parts.append(f"\n━━━━━━━━━━━━━━━\n📍 {html_module.escape(stripped)}\n")
+            expect_card_name = True
+            continue
+
+        if expect_card_name:
+            # Card name line right after position header
+            result_parts.append(f"🔮 <b>{html_module.escape(stripped)}</b>\n")
+            expect_card_name = False
+            continue
+
+        result_parts.append(html_module.escape(stripped))
+
+    return _clean_text("\n".join(result_parts))
+
+
 async def fetch_spread(spread_key: str) -> str | None:
     """Fetch a tarot spread result from astrocentr.ru.
 
-    Returns cleaned text with card meanings, or None on error.
+    Returns cleaned HTML-formatted text with card meanings, or None on error.
     """
     spread = SPREADS.get(spread_key)
     if not spread:
@@ -87,7 +121,7 @@ async def fetch_spread(spread_key: str) -> str | None:
 
         # Strip navigation header lines (first few lines are breadcrumbs)
         lines = raw.split("\n")
-        content_lines = []
+        content_lines: list[str] = []
         started = False
         for line in lines:
             stripped = line.strip()
@@ -101,7 +135,7 @@ async def fetch_spread(spread_key: str) -> str | None:
             # Fallback: skip first 3 nav lines
             content_lines = lines[3:]
 
-        result = _clean_text("\n".join(content_lines))
+        result = _format_spread_lines(content_lines)
         if not result:
             logger.warning(f"Empty result for spread {spread_key}")
             return None

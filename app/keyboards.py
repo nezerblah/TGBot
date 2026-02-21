@@ -63,20 +63,14 @@ def back_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data="back:list")]])
 
 
-def main_menu_keyboard(tarot_daily_subscribed: bool, is_premium: bool = False) -> ReplyKeyboardMarkup:
-    """Build main reply keyboard with tarot, spreads, daily subscription and premium buttons."""
-    daily_label = (
-        "🌙 Отписаться от ежедневного предсказания"
-        if tarot_daily_subscribed
-        else "🌙 Подписаться на ежедневное предсказание"
-    )
-    premium_label = "⭐ Premium активен ✓" if is_premium else "⭐ Premium — безлимит"
+def main_menu_keyboard(tarot_daily_subscribed: bool) -> ReplyKeyboardMarkup:
+    """Build compact main reply keyboard (3 rows, no scrolling)."""
+    daily_label = "🌙 Ежедневная карта ✓" if tarot_daily_subscribed else "🌙 Ежедневная карта"
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🔮 Получить предсказание")],
-            [KeyboardButton(text="🔮 Выбрать расклад")],
+            [KeyboardButton(text="🔮 Предсказание"), KeyboardButton(text="🔮 Расклады")],
             [KeyboardButton(text=daily_label)],
-            [KeyboardButton(text=premium_label)],
+            [KeyboardButton(text="⭐ Подписки и тарифы")],
         ],
         resize_keyboard=True,
     )
@@ -99,3 +93,23 @@ def spreads_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="💕 Влюблённые (расклад на отношения)", callback_data="spread:lovers")],
         ]
     )
+
+
+def spread_paywall_keyboard(spread_key: str) -> InlineKeyboardMarkup:
+    """Build inline keyboard for spread paywall (Premium+ or single purchase)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💎 Оформить Premium+ (100 ⭐)", callback_data="buy:premium_plus")],
+            [InlineKeyboardButton(text="🎴 Купить этот расклад (15 ⭐)", callback_data=f"buy:spread:{spread_key}")],
+        ]
+    )
+
+
+def premium_info_keyboard(premium_active: bool, plus_active: bool) -> InlineKeyboardMarkup:
+    """Build inline keyboard for premium info page."""
+    buttons = []
+    if not premium_active:
+        buttons.append([InlineKeyboardButton(text="🔮 Купить Premium (10 ⭐)", callback_data="buy:premium")])
+    if not plus_active:
+        buttons.append([InlineKeyboardButton(text="💎 Купить Premium+ (100 ⭐)", callback_data="buy:premium_plus")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
